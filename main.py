@@ -16,6 +16,12 @@ def afficher_infos_generales(df):
     print("Les 5 premières lignes : ")
     print(df.head())
 
+
+def nettoyage(df):
+    df = df.dropna(axis=1, how="all")
+    
+
+
 if __name__== '__main__':
 
     df2021= lire_fichier("data\\dvf\\ValeursFoncieres-2021.txt")
@@ -38,3 +44,12 @@ if __name__== '__main__':
 
     print("\nDonnées 2025 : \n")
     afficher_infos_generales(df2025)
+
+    # print(df2021.columns[df2021.isnull().all()])
+
+    nettoyage(df2021)
+    nettoyage(df2022)
+    nettoyage(df2023)
+    nettoyage(df2024)
+    nettoyage(df2025)
+            

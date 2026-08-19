@@ -3,7 +3,18 @@ import pandas as pd
 def lire_fichier(chemin): 
     return pd.read_csv(chemin,sep="|")
 
+def afficher_infos_generales(df):
 
+    print("Nombre de lignes : ",df.shape[0])
+    print("Nombre de colonnes : ",df.shape[1])
+
+    print("Valeur nulles : \n", df.isnull().sum())
+
+    print("\nInformations générales : ")
+    df.info();
+
+    print("Les 5 premières lignes : ")
+    print(df.head())
 
 if __name__== '__main__':
 
@@ -13,18 +24,17 @@ if __name__== '__main__':
     df2024= lire_fichier("data\\dvf\\ValeursFoncieres-2024.txt")
     df2025= lire_fichier("data\\dvf\\ValeursFoncieres-2025.txt")
 
-    print("Données 2021 : \n")
+    print("\nDonnées 2021 : \n")
+    afficher_infos_generales(df2021)
 
-    print("Nombre de lignes : ",df2021.shape[0])
-    print("Nombre de colonnes : ",df2021.shape[1])
+    print("\nDonnées 2022 : \n")
+    afficher_infos_generales(df2022)
 
-    print("Colonnes : ", df2021.columns)
-    print("Types des colonnes : ", df2021.dtypes)
+    print("\nDonnées 2023 : \n")
+    afficher_infos_generales(df2023)
 
-    print("Valeur nulles : \n", df2021.isnull().sum())
+    print("\nDonnées 2024 : \n")
+    afficher_infos_generales(df2024)
 
-    print("\nInformations générales : ")
-    df2021.info();
-
-    print("Les 5 premières lignes : ")
-    print(df2021.head())
+    print("\nDonnées 2025 : \n")
+    afficher_infos_generales(df2025)

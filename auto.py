@@ -22,16 +22,33 @@ def telecharger_dfv():
     # on récupère le contenu de la page dvf 
     reponse = requests.get(DATASE_URL,headers=headers)
 
-    print(reponse.status_code)
-    print(reponse.url)
-    print(reponse.headers.get("Content-Type"))
+    print("reponse.status_code: ", reponse.status_code)
+    print("reponse.url: ", reponse.url)
 
     dataset = reponse.json()
 
+    fichiers =[]
+    # dataset["resources"] est liste de dictionnaire que l'on parcourt
+    for resource in dataset["resources"]:
+        url = resource.get("url", "")
+        format =  resource.get("format", "")
 
-    print(dataset["resources"])
+        # filtrer les ressources pour récuperer uniquement les ressources qui correspndent aux 5 dernières années
+        if( format== "txt.zip" and url.endswith(".txt.zip") ):
+            fichiers.append(resource)
 
+    print("nombre de données trouvées: ", len(fichiers))
 
+    for fichier in fichiers:
+        url = fichier["url"]
+        nom = fichier.get("title")
+
+        print("\nTéléchargement : ",  nom)
+        reponse_telechargement =  requests.get(url)
+
+        # reconstruire et déziper les archives récupérer par la requête
+        with zipfile.ZipFile(BytesIO(reponse_telechargement.content)) as archive:
+            archive.extractall(DOSSIER)
 
 if __name__== '__main__':
     telecharger_dfv()

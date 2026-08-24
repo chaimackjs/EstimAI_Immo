@@ -1,0 +1,39 @@
+name: EstimAI_Immo CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Etape 1: Récupération du dépôt
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Etape 2: Choisir la bonne version Python 
+      - name: Version Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Etape 3: Installation des dépendances
+      - name: Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Etape 4: Récupération des données dvf
+      - name: Récupération des données dvf
+        run: |
+          python auto.py
+
+      # Step 5: Lancement de main.py
+      - name: Lancement de main.py
+        run: |
+          python main.py
+          

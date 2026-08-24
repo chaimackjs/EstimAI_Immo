@@ -1,4 +1,5 @@
-import pandas as pd 
+import pandas as pd
+import os
 
 def lire_fichier(chemin): 
     return pd.read_csv(chemin,sep="|")
@@ -40,11 +41,11 @@ def nettoyage(df):
 
 if __name__== '__main__':
 
-    df2021= lire_fichier("data\\dvf\\ValeursFoncieres-2021.txt")
-    df2022= lire_fichier("data\\dvf\\ValeursFoncieres-2022.txt")
-    df2023= lire_fichier("data\\dvf\\ValeursFoncieres-2023.txt")
-    df2024= lire_fichier("data\\dvf\\ValeursFoncieres-2024.txt")
-    df2025= lire_fichier("data\\dvf\\ValeursFoncieres-2025.txt")
+    df2021= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2021.txt"))
+    df2022= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2022.txt"))
+    df2023= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2023.txt"))
+    df2024= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2024.txt"))
+    df2025= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2025.txt"))
 
     print("\nDonnées 2021 : \n")
     afficher_infos_generales(df2021)

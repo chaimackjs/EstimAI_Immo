@@ -18,7 +18,23 @@ def afficher_infos_generales(df):
 
 
 def nettoyage(df):
+    # Standariser les noms de colonnes (maj->min) et remplacer les espaces par des "_"
+    df.columns = (df.columns.str.lower().str.replace(" ","_"))
+    # Transformer les data de la colonne "date_mutation" de type"str" en vrai dates qu'on pourra utiliser
+    df["date_mutation"] = pd.to_datetime(df["date_mutation"],dayfirst=True)
+    # Les valeurs de la colonne contiennent des virgules ce qui empêche l'utilisation numérique des valeurs
+    # on transforme donc les "," en "." puis on transfomr en valeur numérique avec "pd.to_numeric"
+    df["valeur_fonciere"] = pd.to_numeric(df["valeur_fonciere"].str.replace(",","."))
+    # On supprime dans la colonne "nature_mutation' les lignes qui ne correspondent pas à des mutations de nature vente
+    df = df[ df["nature_mutation"]=="Vente"  ]
+    # On supprime dans la colonne "type_local' les lignes qui ne correspondent pas à des locaux de type maison ou appartement
+    df = df[ df["type_local"].isin(["Maison","Appartement"])  ]
+    # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
+    # On supprime les colonnes non pertinante après première analyse
+    df = df.drop(columns=["no_disposition","b/t/q","no_plan","type_local","nature_culture","nature_culture_speciale"])
+
+    return df
     
 
 
@@ -32,6 +48,11 @@ if __name__== '__main__':
 
     print("\nDonnées 2021 : \n")
     afficher_infos_generales(df2021)
+
+
+    print("Valeurs nature_mutation :", df2021["Nature mutation"].unique())
+    print("Valeurs type_local :", df2021["Type local"].unique())
+
 
     print("\nDonnées 2022 : \n")
     afficher_infos_generales(df2022)
@@ -47,9 +68,14 @@ if __name__== '__main__':
 
     # print(df2021.columns[df2021.isnull().all()])
 
-    nettoyage(df2021)
-    nettoyage(df2022)
-    nettoyage(df2023)
-    nettoyage(df2024)
-    nettoyage(df2025)
+    df2021 = nettoyage(df2021)
+    df2022 = nettoyage(df2022)
+    df2023 = nettoyage(df2023)
+    df2024 = nettoyage(df2024)
+    df2025 = nettoyage(df2025)
             
+
+    print("\nDonnées 2021 : \n")
+    afficher_infos_generales(df2021)
+
+    print()

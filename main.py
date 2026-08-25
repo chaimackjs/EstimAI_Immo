@@ -1,3 +1,4 @@
+import requests
 import pandas as pd
 import os
 
@@ -17,8 +18,7 @@ def afficher_infos_generales(df):
     print("Les 5 premières lignes : ")
     print(df.head())
 
-
-def nettoyage(df):
+def nettoyage_dvf(df):
     # Standariser les noms de colonnes (maj->min) et remplacer les espaces par des "_"
     df.columns = (df.columns.str.lower().str.replace(" ","_"))
     # Transformer les data de la colonne "date_mutation" de type"str" en vrai dates qu'on pourra utiliser
@@ -37,6 +37,68 @@ def nettoyage(df):
 
     return df
     
+
+def recuperer_dpe(nb_ligne=10000):
+    url = "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
+
+
+    reponse = requests.get(url, params={"size":nb_ligne} )
+
+    data = reponse.json()
+
+    return pd.DataFrame(data["results"])
+
+
+def nettoyage_dpe(df):
+
+    # La liste des colonns à conserver: 
+    colonnes_dpe_utiles=[
+        "date_etablissement_dpe",
+        "etiquette_dpe",
+        "etiquette_ges",
+        "annee_construction",
+        "adresse_brut",
+        "nom_commune_brut",
+        "code_postal_brut",
+        "type_batiment",
+        "surface_habitable_logement",
+        "type_energie_principale_chauffage",
+        "qualite_isolation_enveloppe",
+        "qualite_isolation_murs",
+        "qualite_isolation_menuiseries"
+    ]
+
+    # Changement des dataframes avec uniquelemnt les ncolonnes souhaitées
+    df = df[colonnes_dpe_utiles]
+
+    # Transformer les data de la colonne "date_etablissement_dpe" de type"str" en vrai dates qu'on pourra utiliser
+    df["date_etablissement_dpe"] = pd.to_datetime(df["date_etablissement_dpe"],yearfirst=True)
+
+    # print("df['etiquette_dpe'].unique() : ", list(df["etiquette_dpe"].unique()) )
+    # print("df['etiquette_ges'].unique() : ", list(df["etiquette_ges"].unique()) )
+
+    # Dictionnaire de mapping pour les étiquettes dpe
+    mapping_dpe={'A':7, 'B':6,'C':5, 'D':4,'E':3, 'F':2,'G':1}
+
+    # Application du mapping 
+    df["etiquette_dpe"]= df["etiquette_dpe"].map(mapping_dpe)
+    df["etiquette_ges"]= df["etiquette_ges"].map(mapping_dpe)
+
+    # print("df['etiquette_dpe'].unique() : ", df["etiquette_dpe"].unique() )
+    # print("df['qualite_isolation_enveloppe'].unique() : ", list(df["qualite_isolation_enveloppe"].unique()) )
+    
+    mapping_isolation={'très bonne':4, 'bonne':3,'moyenne':2, 'insuffisante':1}
+    df["qualite_isolation_enveloppe"]= df["qualite_isolation_enveloppe"].map(mapping_isolation)
+    df["qualite_isolation_murs"]= df["qualite_isolation_murs"].map(mapping_isolation)
+    df["qualite_isolation_menuiseries"]= df["qualite_isolation_menuiseries"].map(mapping_isolation)
+    # print(df["qualite_isolation_enveloppe"].unique() )
+
+    # print(df["type_batiment"].unique())
+    df = df[ df["type_batiment"].isin(["maison","appartement"])  ]
+    mapping_type_batiment={'maison':1, 'appartement':2}
+    df["type_batiment"]= df["type_batiment"].map(mapping_type_batiment)
+
+    return df
 
 
 if __name__== '__main__':
@@ -69,14 +131,20 @@ if __name__== '__main__':
 
     # print(df2021.columns[df2021.isnull().all()])
 
-    df2021 = nettoyage(df2021)
-    df2022 = nettoyage(df2022)
-    df2023 = nettoyage(df2023)
-    df2024 = nettoyage(df2024)
-    df2025 = nettoyage(df2025)
+    df2021 = nettoyage_dvf(df2021)
+    df2022 = nettoyage_dvf(df2022)
+    df2023 = nettoyage_dvf(df2023)
+    df2024 = nettoyage_dvf(df2024)
+    df2025 = nettoyage_dvf(df2025)
             
 
     print("\nDonnées 2021 : \n")
     afficher_infos_generales(df2021)
 
     print()
+
+
+    df_dpe = recuperer_dpe(10000)
+    df_dpe = nettoyage_dpe(df_dpe)
+    afficher_infos_generales(df_dpe)
+ 

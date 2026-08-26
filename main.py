@@ -181,11 +181,17 @@ def recup_donnes_from_source():
     enregistrer_clean(df_dpe,"dpe.csv")
     enregistrer_clean(df_dvf,"dvf.csv")
 
+    return df_dpe,df_dvf
 
 if __name__== '__main__':
 
-    df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))
-    df_dvf= pd.read_csv(os.path.join("data","clean","dvf.csv"))
+    use_clean=False
+
+    if(use_clean==True):
+        df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))
+        df_dvf= pd.read_csv(os.path.join("data","clean","dvf.csv"))
+    else:
+        df_dpe,df_dvf=recup_donnes_from_source()
 
     afficher_correlation(df_dpe)
     afficher_correlation(df_dvf)

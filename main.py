@@ -1,5 +1,6 @@
 import requests
 import pandas as pd
+import matplotlib.pyplot as plt
 import os
 
 def lire_fichier(chemin): 
@@ -100,9 +101,36 @@ def nettoyage_dpe(df):
 
     return df
 
+def afficher_correlation(df):
+    correlation = df.corr(numeric_only=True)
 
-if __name__== '__main__':
+    plt.imshow(correlation)
 
+    plt.grid(False) 
+
+    # Optional: Remove minor ticks that can look like grid lines
+    plt.xticks(range(len(correlation.columns)),correlation.columns, rotation=90 )
+    plt.yticks(range(len(correlation.columns)),correlation.columns)
+
+    for i in range(len(correlation.columns)):
+        for j in range(len(correlation.columns)):
+            plt.text(j, i, f'{correlation.iloc[i, j]:.2f}', ha='center', va='center', color='white')
+
+
+    plt.colorbar()
+    plt.show()
+
+# Fonction pour enregistrer les dataframes pré-traité dans un fichier
+def enregistrer_clean(df,nom_fichier):
+    dossier=os.path.join("data","clean")
+    os.makedirs(dossier,exist_ok=True)
+
+    chemin = os.path.join(dossier,nom_fichier)
+
+    df.to_csv(chemin,index=False)
+
+# Récupération des données à partir des sources:
+def recup_donnes_from_source():
     df2021= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2021.txt"))
     df2022= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2022.txt"))
     df2023= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2023.txt"))
@@ -136,15 +164,28 @@ if __name__== '__main__':
     df2023 = nettoyage_dvf(df2023)
     df2024 = nettoyage_dvf(df2024)
     df2025 = nettoyage_dvf(df2025)
-            
 
     print("\nDonnées 2021 : \n")
     afficher_infos_generales(df2021)
 
-    print()
+    # Concaténation des données des 5 années:
+    df_dvf = pd.concat([df2021,df2022,df2023,df2024,df2025])
 
-
+    #Récuéparation et nettoyage des données dpe:
     df_dpe = recuperer_dpe(10000)
     df_dpe = nettoyage_dpe(df_dpe)
+
     afficher_infos_generales(df_dpe)
- 
+
+    # Enregistrer les dataframes traités dans 2 fichiers csv distincts 
+    enregistrer_clean(df_dpe,"dpe.csv")
+    enregistrer_clean(df_dvf,"dvf.csv")
+
+
+if __name__== '__main__':
+
+    df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))
+    df_dvf= pd.read_csv(os.path.join("data","clean","dvf.csv"))
+
+    afficher_correlation(df_dpe)
+    afficher_correlation(df_dvf)

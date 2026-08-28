@@ -137,39 +137,19 @@ def recup_donnes_from_source():
     df2024= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2024.txt"))
     df2025= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2025.txt"))
 
-    print("\nDonnées 2021 : \n")
-    afficher_infos_generales(df2021)
+    # Concaténation des données des 5 années:
+    df_dvf = pd.concat([df2021,df2022,df2023,df2024,df2025])
 
-
-    print("Valeurs nature_mutation :", df2021["Nature mutation"].unique())
-    print("Valeurs type_local :", df2021["Type local"].unique())
-
-
-    print("\nDonnées 2022 : \n")
-    afficher_infos_generales(df2022)
-
-    print("\nDonnées 2023 : \n")
-    afficher_infos_generales(df2023)
-
-    print("\nDonnées 2024 : \n")
-    afficher_infos_generales(df2024)
-
-    print("\nDonnées 2025 : \n")
-    afficher_infos_generales(df2025)
+    print("\nDonnées dvf avant nettoyage : \n")
+    afficher_infos_generales(df_dvf)
 
     # print(df2021.columns[df2021.isnull().all()])
 
-    df2021 = nettoyage_dvf(df2021)
-    df2022 = nettoyage_dvf(df2022)
-    df2023 = nettoyage_dvf(df2023)
-    df2024 = nettoyage_dvf(df2024)
-    df2025 = nettoyage_dvf(df2025)
+    df_dvf = nettoyage_dvf(df_dvf)
 
-    print("\nDonnées 2021 : \n")
-    afficher_infos_generales(df2021)
+    print("\nDonnées df_dvf  après nettoyage : \n")
+    afficher_infos_generales(df_dvf)
 
-    # Concaténation des données des 5 années:
-    df_dvf = pd.concat([df2021,df2022,df2023,df2024,df2025])
 
     #Récuéparation et nettoyage des données dpe:
     df_dpe = recuperer_dpe(500000)

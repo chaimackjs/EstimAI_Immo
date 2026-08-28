@@ -99,6 +99,22 @@ def nettoyage_dpe(df):
     mapping_type_batiment={'maison':1, 'appartement':2}
     df["type_batiment"]= df["type_batiment"].map(mapping_type_batiment)
 
+
+    mapping_type_energie ={ 'Réseau de Chauffage urbain':0,
+                        'Gaz naturel':1,
+                            'Électricité':2,
+                            'Bois – Bûches':3,
+                            'GPL':4,
+                            'Fioul domestique':5,
+                            'Propane':6,
+                            'Bois – Granulés (pellets) ou briquettes':7,
+                            'Bois – Plaquettes forestières':8,
+                            'Charbon':9,
+                            'Bois – Plaquettes d’industrie':10}
+
+
+    df['type_energie_principale_chauffage']= df['type_energie_principale_chauffage'].map(mapping_type_energie)
+
     return df
 
 def afficher_correlation(df):
@@ -175,3 +191,4 @@ if __name__== '__main__':
 
     afficher_correlation(df_dpe)
     afficher_correlation(df_dvf)
+

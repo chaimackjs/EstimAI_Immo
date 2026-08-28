@@ -10,7 +10,7 @@ DATASE_URL="https://www.data.gouv.fr/api/1/datasets/demandes-de-valeurs-fonciere
 DOSSIER="data/dvf"
 
 headers= {
-    "Accep": "application/json",
+    "Accept": "application/json",
     "User-Agent": "Mozilla/5.0"
 }
 

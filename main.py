@@ -172,7 +172,7 @@ def recup_donnes_from_source():
     df_dvf = pd.concat([df2021,df2022,df2023,df2024,df2025])
 
     #Récuéparation et nettoyage des données dpe:
-    df_dpe = recuperer_dpe(10000)
+    df_dpe = recuperer_dpe(500000)
     df_dpe = nettoyage_dpe(df_dpe)
 
     afficher_infos_generales(df_dpe)

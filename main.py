@@ -165,7 +165,7 @@ def recup_donnes_from_source():
 
 if __name__== '__main__':
 
-    use_clean=False
+    use_clean=os.path.exists("data/clean")
 
     if(use_clean==True):
         df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))

@@ -76,6 +76,16 @@ def nettoyage_dvf(df):
     df = df[df["surface_reelle_bati"].gt(0)]
     # Les codes postaux DVF à quatre caractères doivent conserver leur zéro initial.
     df["code_postal"] = df["code_postal"].str.strip().str.zfill(5)
+
+    # Créer le code INSEE à cinq caractères pour le rapprochement avec les DPE.
+    code_departement=df["code_departement"].str.strip()
+    code_commune=df["code_commune"].str.strip()
+    df["code_insee"]=code_departement + code_commune.str.zfill(3)
+
+    # Dans les DOM, le code département a trois caractères et le code commune deux.
+    outre_mer=code_departement.str.len().eq(3)
+    df.loc[outre_mer, "code_insee"]=(code_departement[outre_mer] + code_commune[outre_mer].str.zfill(2))
+
     # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
 
@@ -97,6 +107,10 @@ def nettoyage_dpe(df):
 
     # Changement des dataframes avec uniquelemnt les ncolonnes souhaitées
     df = df[COLONNES_DPE_UTILES]
+
+    # Utiliser le même format de clé géographique que les données DVF
+    df["code_insee_ban"] = df["code_insee_ban"].astype("string").str.strip().str.zfill(5)
+
 
     # Transformer les data de la colonne "date_etablissement_dpe" de type"str" en vrai dates qu'on pourra utiliser
     df["date_etablissement_dpe"] = pd.to_datetime(df["date_etablissement_dpe"],yearfirst=True)

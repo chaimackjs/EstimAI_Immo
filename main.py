@@ -12,6 +12,7 @@ COLONNES_DVF_UTILES = [
     "Commune",
     "Code departement",
     "Code commune",
+    "Code type local",    
     "Type local",
     "Surface reelle bati",
     "Nombre pieces principales",
@@ -117,12 +118,15 @@ def nettoyage_dpe(df):
     # Changement des dataframes avec uniquelemnt les ncolonnes souhaitées
     df = df[COLONNES_DPE_UTILES]
 
-    # Utiliser le même format de clé géographique que les données DVF
-    df["code_insee_ban"] = df["code_insee_ban"].astype("string").str.strip().str.zfill(5)
+    # Utiliser la même clé géographique que les données DVF.
+    df = df.rename(columns={"code_insee_ban": "code_insee"})
+    df["code_insee"] = df["code_insee"].astype("string").str.strip().str.zfill(5)
 
 
     # Transformer les data de la colonne "date_etablissement_dpe" de type"str" en vrai dates qu'on pourra utiliser
     df["date_etablissement_dpe"] = pd.to_datetime(df["date_etablissement_dpe"],yearfirst=True)
+    # Année du diagnostic
+    df["annee_dpe"] = df["date_etablissement_dpe"].dt.year
 
     # print("df['etiquette_dpe'].unique() : ", list(df["etiquette_dpe"].unique()) )
     # print("df['etiquette_ges'].unique() : ", list(df["etiquette_ges"].unique()) )
@@ -146,8 +150,9 @@ def nettoyage_dpe(df):
     # print(df["type_batiment"].unique())
     df = df[ df["type_batiment"].isin(["maison","appartement"])  ]
     mapping_type_batiment={'maison':1, 'appartement':2}
-    df["type_batiment"]= df["type_batiment"].map(mapping_type_batiment)
 
+    df["code_type_local"] = df["type_batiment"].map(mapping_type_batiment)
+    df = df.drop(columns="type_batiment")
 
     mapping_type_energie ={ 'Réseau de Chauffage urbain':0,
                         'Gaz naturel':1,

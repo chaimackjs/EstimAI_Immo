@@ -208,7 +208,7 @@ def recup_donnes_from_source():
 
 
     #Récuéparation et nettoyage des données dpe:
-    df_dpe = recuperer_dpe(500000)
+    df_dpe = recuperer_dpe(10000)
     df_dpe = nettoyage_dpe(df_dpe)
 
     afficher_infos_generales(df_dpe)

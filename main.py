@@ -3,8 +3,24 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
+# Colonnes DVF nécessaires à l'estimation immobilière
+COLONNES_DVF_UTILES = [
+    "Date mutation",
+    "Nature mutation",
+    "Valeur fonciere",
+    "Code postal",
+    "Commune",
+    "Code departement",
+    "Code commune",
+    "Type local",
+    "Surface reelle bati",
+    "Nombre pieces principales",
+    "Nombre de lots",
+    "Surface terrain",
+]
+
 def lire_fichier(chemin): 
-    return pd.read_csv(chemin,sep="|", low_memory=False)
+    return pd.read_csv(chemin,sep="|", usecols=COLONNES_DVF_UTILES,low_memory=False)
 
 def afficher_infos_generales(df):
 
@@ -33,8 +49,6 @@ def nettoyage_dvf(df):
     df = df[ df["type_local"].isin(["Maison","Appartement"])  ]
     # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
-    # On supprime les colonnes non pertinante après première analyse
-    df = df.drop(columns=["no_disposition","b/t/q","no_plan","type_local","nature_culture","nature_culture_speciale"])
 
     return df
     

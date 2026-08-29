@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import os
 
 def lire_fichier(chemin): 
-    return pd.read_csv(chemin,sep="|")
+    return pd.read_csv(chemin,sep="|", low_memory=False)
 
 def afficher_infos_generales(df):
 

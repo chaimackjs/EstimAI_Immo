@@ -19,8 +19,17 @@ COLONNES_DVF_UTILES = [
     "Surface terrain",
 ]
 
+COLONNES_DVF_TEXTE = {
+    "Code postal": "string",
+    "Commune": "string",
+    "Code departement": "string",
+    "Code commune": "string",
+    "Nature mutation": "string",
+    "Type local": "string",
+}
+
 def lire_fichier(chemin): 
-    return pd.read_csv(chemin,sep="|", usecols=COLONNES_DVF_UTILES,low_memory=False)
+    return pd.read_csv(chemin,sep="|", usecols=COLONNES_DVF_UTILES,dtype=COLONNES_DVF_TEXTE, low_memory=False)
 
 def afficher_infos_generales(df):
 

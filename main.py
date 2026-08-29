@@ -56,6 +56,8 @@ def nettoyage_dvf(df):
     df = df[ df["nature_mutation"]=="Vente"  ]
     # On supprime dans la colonne "type_local' les lignes qui ne correspondent pas à des locaux de type maison ou appartement
     df = df[ df["type_local"].isin(["Maison","Appartement"])  ]
+    # Une surface batie doit être positive
+    df = df[df["surface_reelle_bati"].gt(0)]
     # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
 

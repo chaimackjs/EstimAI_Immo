@@ -74,6 +74,13 @@ def nettoyage_dvf(df):
     df = df[ df["type_local"].isin(["Maison","Appartement"])  ]
     # Une surface batie doit être positive
     df = df[df["surface_reelle_bati"].gt(0)]
+    # La valeur foncière est la cible du modèle : elle doit être renseignée.
+    df = df[df["valeur_fonciere"].notna()]
+    # Indicateur de marché : prix de vente rapporté à la surface bâtie
+    df["prix_m2"] = df["valeur_fonciere"] / df["surface_reelle_bati"]    
+    # Extraire la période de vente
+    df["annee_mutation"] = df["date_mutation"].dt.year
+    df["mois_mutation"] = df["date_mutation"].dt.month
     # Les codes postaux DVF à quatre caractères doivent conserver leur zéro initial.
     df["code_postal"] = df["code_postal"].str.strip().str.zfill(5)
 
@@ -86,11 +93,10 @@ def nettoyage_dvf(df):
     outre_mer=code_departement.str.len().eq(3)
     df.loc[outre_mer, "code_insee"]=(code_departement[outre_mer] + code_commune[outre_mer].str.zfill(2))
 
-    # La valeur foncière est la cible du modèle : elle doit être renseignée.
-    df = df[df["valeur_fonciere"].notna()]
+    # Toutes les lignes restantes sont des ventes : cette colonne est devenue redondante
+    df = df.drop(columns="nature_mutation")
 
-    # On supprime les colonnes complétement vides
-    df = df.dropna(axis=1, how="all")
+    df = df.reset_index(drop=True)
 
     return df
     

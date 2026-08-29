@@ -86,6 +86,9 @@ def nettoyage_dvf(df):
     outre_mer=code_departement.str.len().eq(3)
     df.loc[outre_mer, "code_insee"]=(code_departement[outre_mer] + code_commune[outre_mer].str.zfill(2))
 
+    # La valeur foncière est la cible du modèle : elle doit être renseignée.
+    df = df[df["valeur_fonciere"].notna()]
+
     # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
 

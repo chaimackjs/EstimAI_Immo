@@ -28,6 +28,22 @@ COLONNES_DVF_TEXTE = {
     "Type local": "string",
 }
 
+# La liste des colonns à conserver DPE
+COLONNES_DPE_UTILES = [
+    "date_etablissement_dpe",
+    "etiquette_dpe",
+    "etiquette_ges",
+    "annee_construction",
+    "periode_construction",
+    "code_insee_ban",
+    "type_batiment",
+    "surface_habitable_logement",
+    "type_energie_principale_chauffage",
+    "qualite_isolation_enveloppe",
+    "qualite_isolation_murs",
+    "qualite_isolation_menuiseries",
+]
+
 def lire_fichier(chemin): 
     return pd.read_csv(chemin,sep="|", usecols=COLONNES_DVF_UTILES,dtype=COLONNES_DVF_TEXTE, low_memory=False)
 
@@ -58,6 +74,8 @@ def nettoyage_dvf(df):
     df = df[ df["type_local"].isin(["Maison","Appartement"])  ]
     # Une surface batie doit être positive
     df = df[df["surface_reelle_bati"].gt(0)]
+    # Les codes postaux DVF à quatre caractères doivent conserver leur zéro initial.
+    df["code_postal"] = df["code_postal"].str.strip().str.zfill(5)
     # On supprime les colonnes complétement vides
     df = df.dropna(axis=1, how="all")
 
@@ -77,25 +95,8 @@ def recuperer_dpe(nb_ligne=10000):
 
 def nettoyage_dpe(df):
 
-    # La liste des colonns à conserver: 
-    colonnes_dpe_utiles=[
-        "date_etablissement_dpe",
-        "etiquette_dpe",
-        "etiquette_ges",
-        "annee_construction",
-        "adresse_brut",
-        "nom_commune_brut",
-        "code_postal_brut",
-        "type_batiment",
-        "surface_habitable_logement",
-        "type_energie_principale_chauffage",
-        "qualite_isolation_enveloppe",
-        "qualite_isolation_murs",
-        "qualite_isolation_menuiseries"
-    ]
-
     # Changement des dataframes avec uniquelemnt les ncolonnes souhaitées
-    df = df[colonnes_dpe_utiles]
+    df = df[COLONNES_DPE_UTILES]
 
     # Transformer les data de la colonne "date_etablissement_dpe" de type"str" en vrai dates qu'on pourra utiliser
     df["date_etablissement_dpe"] = pd.to_datetime(df["date_etablissement_dpe"],yearfirst=True)

@@ -115,7 +115,7 @@ def recuperer_dpe(nb_ligne=10000):
 
 def nettoyage_dpe(df):
 
-    # Changement des dataframes avec uniquelemnt les ncolonnes souhaitées
+    # Changement des dataframes avec uniquelemnt les colonnes souhaitées
     df = df[COLONNES_DPE_UTILES]
 
     # Utiliser la même clé géographique que les données DVF.
@@ -231,7 +231,45 @@ def recup_donnes_from_source():
     enregistrer_clean(df_dpe,"dpe.csv")
     enregistrer_clean(df_dvf,"dvf.csv")
 
-    return df_dpe,df_dvf
+    df_model=rapprocher_dvf_dpe(df_dpe,df_dvf)
+    enregistrer_clean(df_model,"dfv_dpe.csv")
+
+    return df_dpe,df_dvf,df_model
+
+
+def rapprocher_dvf_dpe(df_dvf,df_dpe):
+
+    cles = ["code_insee", "code_type_local"]
+    indicateurs_dpe = [
+        "etiquette_dpe",
+        "etiquette_ges",
+        "qualite_isolation_enveloppe",
+        "qualite_isolation_murs",
+        "qualite_isolation_menuiseries",
+    ]
+
+    ventes = df_dvf.copy()
+
+    ventes["date_mutation"] = pd.to_datetime(ventes["date_mutation"], errors="coerce")
+    ventes["code_insee"] = ventes["code_insee"].astype("string").str.zfill(5)
+
+    ventes["code_type_local"] = pd.to_numeric(ventes["code_type_local"], errors="coerce").astype("int64")
+
+    dpe = df_dpe.copy()
+    dpe["date_etablissement_dpe"] = pd.to_datetime(
+        dpe["date_etablissement_dpe"], errors="coerce"
+    )
+    dpe["code_insee"] = dpe["code_insee"].astype("string").str.zfill(5)
+    dpe["code_type_local"] = pd.to_numeric(dpe["code_type_local"], errors="coerce").astype("int64")
+
+    # Agréger les diagnostics d'une même commune et d'un même type de bien par date.
+    agregations = {"nb_dpe": ("etiquette_dpe", "size")}
+    for indicateur in indicateurs_dpe:
+        agregations[f"{indicateur}_somme"] = (indicateur, "sum")
+        agregations[f"{indicateur}_nombre"] = (indicateur, "count")
+
+
+
 
 if __name__== '__main__':
 
@@ -240,9 +278,15 @@ if __name__== '__main__':
     if(use_clean==True):
         df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))
         df_dvf= pd.read_csv(os.path.join("data","clean","dvf.csv"))
+        df_model=pd.read_csv(os.path.join("data","clean","dfv_dpe.csv"))
+
     else:
-        df_dpe,df_dvf=recup_donnes_from_source()
+        df_dpe,df_dvf,df_model=recup_donnes_from_source()
 
     afficher_correlation(df_dpe)
     afficher_correlation(df_dvf)
+    afficher_correlation(df_model)
+
+
+
 

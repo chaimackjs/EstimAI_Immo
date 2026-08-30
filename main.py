@@ -208,6 +208,7 @@ def recup_donnes_from_source():
     df2025= lire_fichier(os.path.join("data","dvf","ValeursFoncieres-2025.txt"))
 
     # Concaténation des données des 5 années:
+    print("Concaténation des données des 5 années...")
     df_dvf = pd.concat([df2021,df2022,df2023,df2024,df2025])
 
     print("\nDonnées dvf avant nettoyage : \n")
@@ -311,8 +312,8 @@ if __name__== '__main__':
         df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))
         df_dvf= pd.read_csv(os.path.join("data","clean","dvf.csv"))
         df_model=pd.read_csv(os.path.join("data","clean","dfv_dpe.csv"))
-
     else:
+        print("Récupération des données à partir des sources...")
         df_dpe,df_dvf,df_model=recup_donnes_from_source()
 
     afficher_correlation(df_dpe)

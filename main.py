@@ -231,7 +231,7 @@ def recup_donnes_from_source():
     enregistrer_clean(df_dpe,"dpe.csv")
     enregistrer_clean(df_dvf,"dvf.csv")
 
-    df_model=rapprocher_dvf_dpe(df_dpe,df_dvf)
+    df_model=rapprocher_dvf_dpe(df_dvf,df_dpe)
     enregistrer_clean(df_model,"dfv_dpe.csv")
 
     return df_dpe,df_dvf,df_model

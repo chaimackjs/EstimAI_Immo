@@ -10,4 +10,9 @@ Il faut ensuite télécharger les fichiers correspondant aux cinq dernières ann
 
 Il est possible de récupérer les données dpe sous forme de fichier : "https://www.data.gouv.fr/dataservices/dpe-logements-existants-depuis-juillet-2021" dans la partie : "Les outils à votre disposition" puis selectionner "Un accès en téléchargement aux données sous forme d’une base de données".
 Cependant, la taille du fichier à récupérer est énorme, nous devons opter pour la deuxième option qui est celle de récupérer lesd onnées directement à part de l'api. Le programme récupère un certain nombre de lignes fixes qu'il est possible de changer depuis "main.py", dans la fonction" def recuperer_dpe(nb_ligne=10000)
-    
+
+
+## Utilisation des données prétraitées:
+
+Le programme principal récupère les données depuis le dossier cache s'il existe, cela permet d'exécuter le programme plus rapidement sans passer le programme de nettoyage. 
+Pour régénérer le programme il suffit de supprimer et de réexécuter le dossier cache

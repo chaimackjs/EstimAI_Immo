@@ -268,6 +268,38 @@ def rapprocher_dvf_dpe(df_dvf,df_dpe):
         agregations[f"{indicateur}_somme"] = (indicateur, "sum")
         agregations[f"{indicateur}_nombre"] = (indicateur, "count")
 
+    dpe_journalier = (
+        dpe.groupby(cles + ["date_etablissement_dpe"], as_index=False)
+        .agg(**agregations)
+        .sort_values(["date_etablissement_dpe", *cles])
+    )
+
+    # Calculer les moyennes cumulées : aucun DPE postérieur à la vente n'est utilisé.
+    groupes = dpe_journalier.groupby(cles, observed=True)
+    dpe_journalier["nb_dpe_cumule"] = groupes["nb_dpe"].cumsum()
+    colonnes_profil = ["nb_dpe_cumule"]
+    for indicateur in indicateurs_dpe:
+        somme = f"{indicateur}_somme"
+        nombre = f"{indicateur}_nombre"
+        moyenne = f"{indicateur}_moyenne_locale"
+        dpe_journalier[somme] = groupes[somme].cumsum()
+        dpe_journalier[nombre] = groupes[nombre].cumsum()
+        dpe_journalier[moyenne] = dpe_journalier[somme] / dpe_journalier[nombre]
+        colonnes_profil.append(moyenne)
+
+    profil_dpe = dpe_journalier[
+        cles + ["date_etablissement_dpe", *colonnes_profil]
+    ].sort_values(["date_etablissement_dpe", *cles])
+
+    ventes = ventes.sort_values(["date_mutation", *cles])
+    return pd.merge_asof(
+        ventes,
+        profil_dpe,
+        left_on="date_mutation",
+        right_on="date_etablissement_dpe",
+        by=cles,
+        direction="backward",
+    ).drop(columns="date_etablissement_dpe").reset_index(drop=True)
 
 
 

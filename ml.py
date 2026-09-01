@@ -7,6 +7,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
+from sklearn.linear_model import BayesianRidge
 
 # Chemin vers les données prétraitées
 DATA_PATH = os.path.join("data", "clean", "dfv_dpe.csv")
@@ -114,7 +115,7 @@ def main():
     print("Chargement des données...")
     df_model = pd.read_csv(DATA_PATH)
 
-    df_model=df_model.sample(n=300000)
+    df_model=df_model.sample(n=1000000)
 
 
     # Préparer les données
@@ -125,7 +126,7 @@ def main():
     model_list = [
         {"model_nom":"LinearRegression","model":LinearRegression()},
         {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
-#        {"model_nom":"LinearRegression","model":LinearRegression()},
+        {"model_nom":"BayesianRidge","model":BayesianRidge()},
 #        {"model_nom":"LinearRegression","model":LinearRegression()},
     ]
 

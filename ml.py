@@ -1,9 +1,11 @@
 import pandas as pd
 import numpy as np
 import os
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 
 # Chemin vers les données prétraitées
@@ -60,11 +62,10 @@ def preparer_donnees(df_model, target="prix_m2"):
     
     return X_train_scaled, X_test_scaled, y_train, y_test, scaler, colonnes_existantes
 
-def entrainer_modele(X_train, X_test, y_train, y_test):
+def entrainer_modele(X_train, X_test, y_train, y_test, model):
     
-    print(f"\nEntraînement du modèle LinearRegression...")
+    print(f"\nEntraînement du modèle ...")
     
-    model = LinearRegression()
     model.fit(X_train, y_train)
     
     # Prédictions
@@ -83,10 +84,10 @@ def entrainer_modele(X_train, X_test, y_train, y_test):
     
     return model, metriques
 
-def afficher_metriques(metriques):
+def afficher_metriques(metriques, model_nom):
     """Affiche les métriques d'évaluation du modèle"""
     print(f"\n{'='*50}")
-    print(f"LinearRegression")
+    print(model_nom)
     print(f"{'='*50}")
     print(f"RMSE Train: {metriques['rmse_train']:.2f}")
     print(f"RMSE Test:  {metriques['rmse_test']:.2f}")
@@ -97,21 +98,46 @@ def afficher_metriques(metriques):
     print(f"{'='*50}\n")
 
 
+def enregistrer_model(model,nom_model):
+    os.makedirs("models",exist_ok=True)
+
+    chemin=os.path.join("models",f"{nom_model}.joblib")
+
+    joblib.dump(model,chemin)
+
+    print(f"Modèle enregistré : {chemin}")
+
+
 def main():
     
     # Charger les données
     print("Chargement des données...")
     df_model = pd.read_csv(DATA_PATH)
-    
+
+    df_model=df_model.sample(n=300000)
+
+
     # Préparer les données
     print("\nPréparation des données...")
     X_train, X_test, y_train, y_test, scaler, colonnes_features = preparer_donnees(df_model, target="prix_m2")
-    
-    # Entraîner le modèle
-    model, metriques = entrainer_modele(X_train, X_test, y_train, y_test)
-    
-    # Afficher les métriques
-    afficher_metriques(metriques)
+
+
+    model_list = [
+        {"model_nom":"LinearRegression","model":LinearRegression()},
+        {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
+#        {"model_nom":"LinearRegression","model":LinearRegression()},
+#        {"model_nom":"LinearRegression","model":LinearRegression()},
+    ]
+
+    for model_dic in model_list:
+
+        # Entraîner le modèle
+        model, metriques = entrainer_modele(X_train, X_test, y_train, y_test,model_dic["model"])
+        
+        # Afficher les métriques
+        afficher_metriques(metriques,model_dic["model_nom"])
+
+        enregistrer_model(model,model_dic["model_nom"])
     
 if __name__ == "__main__":
     main()

@@ -36,4 +36,9 @@ jobs:
       - name: Lancement de main.py
         run: |
           python main.py
+
+      # Step 6: Entrainement des modèles
+      - name: Lancement de ml.py
+        run: |
+          python ml.py
           

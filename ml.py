@@ -8,6 +8,8 @@ from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
 from sklearn.linear_model import BayesianRidge
+from sklearn.ensemble import HistGradientBoostingRegressor
+
 
 # Chemin vers les données prétraitées
 DATA_PATH = os.path.join("data", "clean", "dfv_dpe.csv")
@@ -127,7 +129,8 @@ def main():
         {"model_nom":"LinearRegression","model":LinearRegression()},
         {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
         {"model_nom":"BayesianRidge","model":BayesianRidge()},
-#        {"model_nom":"LinearRegression","model":LinearRegression()},
+        {"model_nom":"Ridge","model":Ridge()},
+        {"model_nom":"HistGradientBoostingRegressor","model":HistGradientBoostingRegressor()},  
     ]
 
     for model_dic in model_list:

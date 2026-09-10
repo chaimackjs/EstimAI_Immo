@@ -320,6 +320,7 @@ def rapprocher_dvf_dpe(df_dvf,df_dpe):
         right_on="date_etablissement_dpe",
         by=cles,
         direction="backward",
+        allow_exact_matches=False,
     ).drop(columns="date_etablissement_dpe").reset_index(drop=True)
 
 

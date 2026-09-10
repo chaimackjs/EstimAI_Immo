@@ -3,6 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 
+UTILISER_DONNEES_NETTOYEES = True
+DPE_MAX_LIGNES = 100_000
+
 # Colonnes DVF nécessaires à l'estimation immobilière
 COLONNES_DVF_UTILES = [
     "Date mutation",
@@ -102,15 +105,32 @@ def nettoyage_dvf(df):
     return df
     
 
-def recuperer_dpe(nb_ligne=10000):
+def recuperer_dpe(nb_ligne=DPE_MAX_LIGNES, taille_page=10_000):
     url = "https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant/lines"
+    lignes = []
+    url_suivante = url
 
+    while url_suivante and len(lignes) < nb_ligne:
+        taille = min(taille_page, nb_ligne - len(lignes))
+        if url_suivante == url:
+            reponse = requests.get(
+                url_suivante,
+                params={"size": taille},
+                timeout=60,
+            )
+        else:
+            reponse = requests.get(url_suivante, timeout=60)
+        reponse.raise_for_status()
 
-    reponse = requests.get(url, params={"size":nb_ligne} )
+        data = reponse.json()
+        resultats = data.get("results", [])
+        lignes.extend(resultats)
+        url_suivante = data.get("next")
 
-    data = reponse.json()
+        if not resultats:
+            break
 
-    return pd.DataFrame(data["results"])
+    return pd.DataFrame(lignes[:nb_ligne])
 
 
 def nettoyage_dpe(df):
@@ -223,7 +243,7 @@ def recup_donnes_from_source():
 
 
     #Récuéparation et nettoyage des données dpe:
-    df_dpe = recuperer_dpe(10000)
+    df_dpe = recuperer_dpe()
     df_dpe = nettoyage_dpe(df_dpe)
 
     afficher_infos_generales(df_dpe)
@@ -306,7 +326,13 @@ def rapprocher_dvf_dpe(df_dvf,df_dpe):
 
 if __name__== '__main__':
 
-    use_clean=os.path.exists("data/clean")
+    fichiers_clean = [
+        os.path.join("data", "clean", nom)
+        for nom in ("dpe.csv", "dvf.csv", "dfv_dpe.csv")
+    ]
+    use_clean = UTILISER_DONNEES_NETTOYEES and all(
+        os.path.isfile(chemin) for chemin in fichiers_clean
+    )
 
     if(use_clean==True):
         df_dpe= pd.read_csv(os.path.join("data","clean","dpe.csv"))

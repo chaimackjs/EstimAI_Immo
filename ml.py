@@ -13,6 +13,17 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 
 # Chemin vers les données prétraitées
 DATA_PATH = os.path.join("data", "clean", "dfv_dpe.csv")
+RANDOM_STATE = 42
+HGB_FEATURES = [
+    "surface_reelle_bati",
+    "nombre_pieces_principales",
+    "surface_terrain",
+    "nombre_de_lots",
+    "annee_mutation",
+    "mois_mutation",
+    "code_departement",
+    "type_local",
+]
 
 def preparer_donnees(df_model, target="prix_m2"):
 
@@ -56,7 +67,7 @@ def preparer_donnees(df_model, target="prix_m2"):
     print(f"Nombre d'échantillons après suppression des valeurs aberrantes: {len(X)}")
     
     # Diviser en ensembles d'entraînement et de test
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE)
     
     # Normaliser les features
     scaler = StandardScaler()
@@ -64,6 +75,26 @@ def preparer_donnees(df_model, target="prix_m2"):
     X_test_scaled = scaler.transform(X_test)
     
     return X_train_scaled, X_test_scaled, y_train, y_test, scaler, colonnes_existantes
+
+
+def preparer_donnees_hgb(df_model, target="prix_m2"):
+    """Prépare les données HGBR sans supprimer les NaN ni normaliser les variables."""
+    features = [
+        feature
+        for feature in HGB_FEATURES
+        if feature in df_model.columns and df_model[feature].notna().any()
+    ]
+    df_clean = df_model[features + [target]]
+    df_clean = df_clean[df_clean[target].notna()]
+    df_clean = df_clean[(df_clean[target] > 0) & (df_clean[target] < 50_000)]
+
+    X = df_clean[features].copy()
+    for feature in ("code_departement", "type_local"):
+        if feature in X.columns:
+            X[feature] = X[feature].fillna("unknown").astype("category")
+
+    y = df_clean[target]
+    return train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE), features
 
 def entrainer_modele(X_train, X_test, y_train, y_test, model):
     
@@ -117,17 +148,28 @@ def main():
     print("Chargement des données...")
     df_model = pd.read_csv(DATA_PATH)
 
-    df_model=df_model.sample(n=1000000)
+    df_model = df_model.sample(
+        n=min(250_000, len(df_model)),
+        random_state=RANDOM_STATE,
+    )
 
 
     # Préparer les données
     print("\nPréparation des données...")
-    X_train, X_test, y_train, y_test, scaler, colonnes_features = preparer_donnees(df_model, target="prix_m2")
+    X_train, X_test, y_train, y_test, scaler, colonnes_features = preparer_donnees(
+        df_model,
+        target="prix_m2",
+    )
+    (X_train_hgb, X_test_hgb, y_train_hgb, y_test_hgb), hgb_features = preparer_donnees_hgb(
+        df_model,
+        target="prix_m2",
+    )
+    print(f"Variables HGBR utilisées: {hgb_features}")
 
 
     model_list = [
         {"model_nom":"LinearRegression","model":LinearRegression()},
-        {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
+#        {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
         {"model_nom":"BayesianRidge","model":BayesianRidge()},
         {"model_nom":"Ridge","model":Ridge()},
         {"model_nom":"HistGradientBoostingRegressor","model":HistGradientBoostingRegressor()},  
@@ -136,7 +178,22 @@ def main():
     for model_dic in model_list:
 
         # Entraîner le modèle
-        model, metriques = entrainer_modele(X_train, X_test, y_train, y_test,model_dic["model"])
+        if model_dic["model_nom"] == "HistGradientBoostingRegressor":
+            model, metriques = entrainer_modele(
+                X_train_hgb,
+                X_test_hgb,
+                y_train_hgb,
+                y_test_hgb,
+                model_dic["model"],
+            )
+        else:
+            model, metriques = entrainer_modele(
+                X_train,
+                X_test,
+                y_train,
+                y_test,
+                model_dic["model"],
+            )
         
         # Afficher les métriques
         afficher_metriques(metriques,model_dic["model_nom"])

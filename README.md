@@ -1,5 +1,43 @@
 # EstimAI_Immo
 
+## Interface d'estimation
+
+L'interface de production est une petite application Streamlit. Installez les dépendances puis préparez les données comme indiqué ci-dessous :
+
+```bash
+pip install -r requirements.txt
+python preparer_donnees.py
+python ml.py
+streamlit run app.py
+```
+
+L'application est ensuite accessible à l'adresse affichée par Streamlit, généralement `http://localhost:8501`. Elle utilise le modèle `models/HistGradientBoostingRegressor.joblib` et estime le prix au m² à partir des caractéristiques saisies.
+
+## Déploiement gratuit depuis GitHub
+
+GitHub Pages héberge uniquement des fichiers statiques et ne peut pas exécuter cette application Python. Pour conserver le code sur GitHub et obtenir une URL publique gratuitement, utilisez **Streamlit Community Cloud**.
+
+1. Générez le modèle sur votre ordinateur :
+
+	```bash
+	python preparer_donnees.py
+	python ml.py
+	```
+
+2. Vérifiez que `models/HistGradientBoostingRegressor.joblib` existe, puis envoyez les fichiers sur GitHub :
+
+	```bash
+	git add app.py requirements.txt README.md models/HistGradientBoostingRegressor.joblib
+	git commit -m "Ajouter l interface de production"
+	git push origin main
+	```
+
+3. Ouvrez [share.streamlit.io](https://share.streamlit.io), connectez votre compte GitHub et cliquez sur **Create app**.
+4. Sélectionnez le dépôt `chaimackjs/EstimAI_Immo`, la branche `main` et le fichier principal `app.py`.
+5. Cliquez sur **Deploy**. Streamlit fournira une URL publique gratuite pour l'interface.
+
+Le dépôt doit contenir le fichier du modèle : Streamlit Cloud exécute l'application, mais ne lance pas automatiquement l'entraînement des données.
+
 ## Récupération des données dvf:
 
 Le lancement manuel du programme nécessite de récupérer manuellement les données disponibles sur le site « https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres ».

@@ -1,70 +1,81 @@
+"""Profils commune/type sur une fenetre passee. Aucun DPE individuel n'est attribue."""
+import numpy as np
 import pandas as pd
+from nettoyage_dpe import ISOLATIONS
+from utilitaires import dates, normaliser_code
+
+CLES = ['code_insee', 'code_type_local']
+VARIABLES = [*[f'part_{lettre}' for lettre in 'ABCDEFG'], 'part_FG', 'ges_part_FG',
+             *[c + '_score' for c in ISOLATIONS]]
+DPE_FEATURES = ['dpe_nb_diagnostics', 'dpe_nb_etiquettes', 'dpe_profil_disponible',
+                'dpe_anciennete_jours', *['dpe_' + c for c in VARIABLES]]
 
 
-def rapprocher_dvf_dpe(df_dvf, df_dpe):
-    cles = ["code_insee", "code_type_local"]
-    indicateurs_dpe = [
-        "etiquette_dpe",
-        "etiquette_ges",
-        "qualite_isolation_enveloppe",
-        "qualite_isolation_murs",
-        "qualite_isolation_menuiseries",
-    ]
+def construire_profils_dpe(df_dpe):
+    df = df_dpe.copy()
+    df['code_insee'] = normaliser_code(df['code_insee'])
+    df['code_type_local'] = pd.to_numeric(df['code_type_local'], errors='coerce')
+    df['date_disponibilite'] = dates(df['date_disponibilite'])
+    df = df.dropna(subset=CLES + ['date_disponibilite'])
+    df['code_type_local'] = df['code_type_local'].astype('int64')
+    for lettre in 'ABCDEFG':
+        df['part_' + lettre] = df['etiquette_dpe'].eq(lettre).astype('Float64')
+    df['part_FG'] = df['etiquette_dpe'].isin(['F', 'G']).astype(float).where(df['etiquette_dpe'].notna())
+    df['ges_part_FG'] = df['etiquette_ges'].isin(['F', 'G']).astype(float).where(df['etiquette_ges'].notna())
+    aggregations = {'nb_diagnostics': ('numero_dpe', 'size'),
+                    'nb_etiquettes': ('etiquette_dpe', 'count')}
+    for c in VARIABLES:
+        aggregations[c + '_somme'] = (c, 'sum')
+        aggregations[c + '_nombre'] = (c, 'count')
+    profil = (df.groupby(CLES + ['date_disponibilite'], as_index=False, observed=True)
+              .agg(**aggregations).sort_values(['date_disponibilite', *CLES]))
+    cumulables = list(aggregations)
+    profil[cumulables] = profil.groupby(CLES, observed=True)[cumulables].cumsum()
+    return profil.reset_index(drop=True)
 
-    ventes = df_dvf.copy()
-    ventes["date_mutation"] = pd.to_datetime(ventes["date_mutation"], errors="coerce")
-    ventes["code_insee"] = ventes["code_insee"].astype("string").str.zfill(5)
-    ventes["code_type_local"] = pd.to_numeric(
-        ventes["code_type_local"], errors="coerce"
-    )
-    ventes = ventes.dropna(subset=cles + ["date_mutation"])
-    ventes["code_type_local"] = ventes["code_type_local"].astype("int64")
 
-    dpe = df_dpe.copy()
-    dpe["date_etablissement_dpe"] = pd.to_datetime(
-        dpe["date_etablissement_dpe"], errors="coerce"
-    )
-    dpe["code_insee"] = dpe["code_insee"].astype("string").str.zfill(5)
-    dpe["code_type_local"] = pd.to_numeric(
-        dpe["code_type_local"], errors="coerce"
-    )
-    dpe = dpe.dropna(subset=cles + ["date_etablissement_dpe"])
-    dpe["code_type_local"] = dpe["code_type_local"].astype("int64")
+def appliquer_profils_dpe(ventes, profils, fenetre_jours=730, minimum_dpe=20):
+    if fenetre_jours <= 0 or minimum_dpe <= 0:
+        raise ValueError('La fenetre et le minimum de diagnostics doivent etre positifs.')
+    resultat = ventes.drop(columns=[c for c in DPE_FEATURES if c in ventes]).copy().reset_index(drop=True)
+    for c in DPE_FEATURES:
+        resultat[c] = np.nan
+    resultat[['dpe_nb_diagnostics', 'dpe_nb_etiquettes', 'dpe_profil_disponible']] = 0.0
+    if profils is None or profils.empty or ventes.empty:
+        return resultat
+    base = resultat[CLES + ['date_mutation']].copy()
+    base['_position'] = np.arange(len(base))
+    base['code_insee'] = normaliser_code(base['code_insee'])
+    base['date_mutation'] = dates(base['date_mutation'])
+    base['code_type_local'] = pd.to_numeric(base['code_type_local'], errors='coerce')
+    base = base.dropna(subset=CLES + ['date_mutation'])
+    base['code_type_local'] = base['code_type_local'].astype('int64')
+    profil = profils.copy()
+    profil['code_insee'] = normaliser_code(profil['code_insee'])
+    profil['date_disponibilite'] = dates(profil['date_disponibilite'])
+    profil['code_type_local'] = profil['code_type_local'].astype('int64')
+    profil = profil.sort_values(['date_disponibilite', *CLES])
+    def passe(decalage):
+        gauche = base.copy()
+        gauche['_date_recherche'] = gauche['date_mutation'] - pd.Timedelta(days=decalage)
+        return pd.merge_asof(gauche.sort_values('_date_recherche'), profil,
+            left_on='_date_recherche', right_on='date_disponibilite', by=CLES,
+            direction='backward', allow_exact_matches=False).set_index('_position')
+    haut, bas = passe(0), passe(fenetre_jours)
+    # Difference de cumuls : [vente - fenetre, vente), sans le jour de vente.
+    cumulables = [c for c in profil if c not in CLES + ['date_disponibilite']]
+    compte = haut[cumulables].astype(float).fillna(0) - bas[cumulables].astype(float).fillna(0)
+    resultat.loc[compte.index, 'dpe_nb_diagnostics'] = compte['nb_diagnostics']
+    resultat.loc[compte.index, 'dpe_nb_etiquettes'] = compte['nb_etiquettes']
+    resultat.loc[compte.index, 'dpe_profil_disponible'] = compte['nb_etiquettes'].ge(minimum_dpe).astype(int)
+    for c in VARIABLES:
+        nombre = compte[c + '_nombre']
+        valeur = (compte[c + '_somme'] / nombre.replace(0, np.nan)).where(nombre.ge(minimum_dpe))
+        resultat.loc[compte.index, 'dpe_' + c] = valeur
+    age = (haut['date_mutation'] - haut['date_disponibilite']).dt.days
+    resultat.loc[age.index, 'dpe_anciennete_jours'] = age.where(compte['nb_diagnostics'].gt(0))
+    return resultat
 
-    aggregations = {"nb_dpe": ("etiquette_dpe", "size")}
-    for indicateur in indicateurs_dpe:
-        aggregations[f"{indicateur}_somme"] = (indicateur, "sum")
-        aggregations[f"{indicateur}_nombre"] = (indicateur, "count")
 
-    dpe_journalier = (
-        dpe.groupby(cles + ["date_etablissement_dpe"], as_index=False)
-        .agg(**aggregations)
-        .sort_values(["date_etablissement_dpe", *cles])
-    )
-
-    groupes = dpe_journalier.groupby(cles, observed=True)
-    dpe_journalier["nb_dpe_cumule"] = groupes["nb_dpe"].cumsum()
-    colonnes_profil = ["nb_dpe_cumule"]
-    for indicateur in indicateurs_dpe:
-        somme = f"{indicateur}_somme"
-        nombre = f"{indicateur}_nombre"
-        moyenne = f"{indicateur}_moyenne_locale"
-        dpe_journalier[somme] = groupes[somme].cumsum()
-        dpe_journalier[nombre] = groupes[nombre].cumsum()
-        dpe_journalier[moyenne] = dpe_journalier[somme] / dpe_journalier[nombre]
-        colonnes_profil.append(moyenne)
-
-    profil_dpe = dpe_journalier[
-        cles + ["date_etablissement_dpe", *colonnes_profil]
-    ].sort_values(["date_etablissement_dpe", *cles])
-    ventes = ventes.sort_values(["date_mutation", *cles])
-
-    return pd.merge_asof(
-        ventes,
-        profil_dpe,
-        left_on="date_mutation",
-        right_on="date_etablissement_dpe",
-        by=cles,
-        direction="backward",
-        allow_exact_matches=False,
-    ).drop(columns="date_etablissement_dpe").reset_index(drop=True)
+def rapprocher_dvf_dpe(df_dvf, df_dpe, fenetre_jours=730, minimum_dpe=20):
+    return appliquer_profils_dpe(df_dvf, construire_profils_dpe(df_dpe), fenetre_jours, minimum_dpe)

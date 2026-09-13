@@ -1,57 +1,50 @@
+"""Preparation des diagnostics pour des profils statistiques, pas un appariement."""
 import pandas as pd
+from utilitaires import dates, normaliser_code, normaliser_colonnes
+
+ISOLATIONS = ['qualite_isolation_enveloppe', 'qualite_isolation_murs',
+              'qualite_isolation_menuiseries']
+COLONNES_DPE_UTILES = ['numero_dpe', 'date_etablissement_dpe', 'date_reception_dpe',
+    'date_derniere_modification_dpe', 'etiquette_dpe', 'etiquette_ges',
+    'code_insee_ban', 'code_departement_ban', 'type_batiment', *ISOLATIONS]
 
 
-COLONNES_DPE_UTILES = [
-    "date_etablissement_dpe",
-    "etiquette_dpe",
-    "etiquette_ges",
-    "annee_construction",
-    "periode_construction",
-    "code_insee_ban",
-    "type_batiment",
-    "surface_habitable_logement",
-    "type_energie_principale_chauffage",
-    "qualite_isolation_enveloppe",
-    "qualite_isolation_murs",
-    "qualite_isolation_menuiseries",
-]
-
-
-def nettoyer_dpe(df):
-    df = df[COLONNES_DPE_UTILES].copy()
-    df = df.rename(columns={"code_insee_ban": "code_insee"})
-    df["code_insee"] = df["code_insee"].astype("string").str.strip().str.zfill(5)
-    df["date_etablissement_dpe"] = pd.to_datetime(
-        df["date_etablissement_dpe"],
-        errors="coerce",
-    )
-    df["annee_dpe"] = df["date_etablissement_dpe"].dt.year
-
-    mapping_dpe = {"A": 7, "B": 6, "C": 5, "D": 4, "E": 3, "F": 2, "G": 1}
-    for colonne in ("etiquette_dpe", "etiquette_ges"):
-        df[colonne] = (
-            df[colonne].astype("string").str.strip().str.upper().map(mapping_dpe)
-        )
-
-    mapping_isolation = {
-        "très bonne": 4,
-        "bonne": 3,
-        "moyenne": 2,
-        "insuffisante": 1,
-    }
-    for colonne in (
-        "qualite_isolation_enveloppe",
-        "qualite_isolation_murs",
-        "qualite_isolation_menuiseries",
-    ):
-        df[colonne] = (
-            df[colonne].astype("string").str.strip().str.lower().map(mapping_isolation)
-        )
-
-    df = df[df["type_batiment"].isin(["maison", "appartement"])].copy()
-    df["code_type_local"] = df["type_batiment"].map(
-        {"maison": 1, "appartement": 2}
-    )
-    return df.drop(columns="type_batiment")
-
-
+def nettoyer_dpe(df, retourner_rapport=False):
+    df = normaliser_colonnes(df).rename(columns={'code_insee_ban': 'code_insee'})
+    requis = {'numero_dpe', 'date_etablissement_dpe', 'code_insee', 'type_batiment', 'etiquette_dpe'}
+    if manquantes := sorted(requis - set(df)):
+        raise ValueError(f'Colonnes DPE absentes : {manquantes}. Regenerer la collecte ADEME.')
+    rapport = {'lignes_brutes': len(df)}
+    df['numero_dpe'] = df['numero_dpe'].astype('string').str.strip().replace('', pd.NA)
+    df['code_insee'] = normaliser_code(df['code_insee'])
+    df['type_batiment'] = df['type_batiment'].astype('string').str.strip().str.lower()
+    df['code_type_local'] = df['type_batiment'].map({'maison': 1, 'appartement': 2})
+    for c in ['date_etablissement_dpe', 'date_reception_dpe', 'date_derniere_modification_dpe']:
+        df[c] = dates(df.get(c, pd.Series(pd.NaT, index=df.index)))
+    dates_source = ['date_etablissement_dpe', 'date_reception_dpe', 'date_derniere_modification_dpe']
+    # La version actuelle d'un diagnostic ne doit pas etre retro-injectee
+    # avant sa reception/modification connue. Cela reste une approximation
+    # conservatrice, pas une archive historique point-in-time de l'API.
+    df['date_disponibilite'] = df[dates_source].max(axis=1)
+    df['disponibilite_estimee'] = df[dates_source[1:]].isna().all(axis=1).astype(int)
+    for c in ['etiquette_dpe', 'etiquette_ges']:
+        serie = df.get(c, pd.Series(pd.NA, index=df.index)).astype('string').str.strip().str.upper()
+        df[c] = serie.where(serie.isin(list('ABCDEFG')))
+    for c in ISOLATIONS:
+        serie = df.get(c, pd.Series(pd.NA, index=df.index)).astype('string').str.strip().str.lower()
+        df[c + '_score'] = serie.map({'tr\u00e8s bonne': 4, 'tres bonne': 4, 'bonne': 3,
+                                      'moyenne': 2, 'insuffisante': 1}).astype(float)
+    df = df.dropna(subset=['numero_dpe', 'date_etablissement_dpe', 'code_insee', 'code_type_local'])
+    df = df[df['code_insee'].str.fullmatch(r'(?:[0-9]{5}|2[AB][0-9]{3})').fillna(False)]
+    rapport['lignes_invalides'] = rapport['lignes_brutes'] - len(df)
+    avant = len(df)
+    df = df.sort_values('date_disponibilite').drop_duplicates('numero_dpe', keep='last')
+    rapport['doublons_numero_dpe'] = avant - len(df)
+    rapport['disponibilite_estimee'] = int(df['disponibilite_estimee'].sum())
+    rapport['diagnostics_conserves'] = len(df)
+    colonnes = ['numero_dpe', 'code_insee', 'code_type_local', *dates_source,
+                'date_disponibilite', 'disponibilite_estimee', 'etiquette_dpe', 'etiquette_ges',
+                *[c + '_score' for c in ISOLATIONS]]
+    df = df[colonnes].reset_index(drop=True)
+    df.attrs['rapport'] = rapport
+    return (df, rapport) if retourner_rapport else df

@@ -1,56 +1,212 @@
-# EstimAI_Immo
+# EstimAI Immo - version corrigée
 
-## Interface d'estimation
+Cette version corrige la construction de la cible, l'utilisation des variables DPE,
+la localisation, la comparaison des modèles et la sauvegarde pour la prédiction.
+Les corrections ne constituent pas une promesse de meilleur R² : il faut le mesurer
+sur les données réelles. Lire `AUDIT.md` pour le diagnostic du code initial.
 
-L'interface de production est une petite application Streamlit. Installez les dépendances puis préparez les données comme indiqué ci-dessous :
+## 1. Installation
+
+Depuis le dossier du projet, sous Windows ou Linux :
 
 ```bash
-pip install -r requirements.txt
-python preparer_donnees.py
-python ml.py
-streamlit run app.py
+python -m pip install -r requirements.txt
 ```
 
-L'application est ensuite accessible à l'adresse affichée par Streamlit, généralement `http://localhost:8501`. Elle utilise le modèle `models/HistGradientBoostingRegressor.joblib` et estime le prix au m² à partir des caractéristiques saisies.
+`requirements-tested.txt` contient les versions exactes utilisées pour les tests
+locaux. Tous les chemins internes sont relatifs au dossier du projet, pas au
+répertoire courant du terminal.
 
-## Déploiement gratuit depuis GitHub
+## 2. Collecter un périmètre cohérent
 
-GitHub Pages héberge uniquement des fichiers statiques et ne peut pas exécuter cette application Python. Pour conserver le code sur GitHub et obtenir une URL publique gratuitement, utilisez **Streamlit Community Cloud**.
+Exemple avec le département 69 : adapter les départements et les années au projet.
+Il n'est pas nécessaire de commencer par toute la France.
 
-1. Générez le modèle sur votre ordinateur :
+```bash
+python acquisition_donnees.py --departements 69 --annees 2021 2022 2023 2024 2025 --avec-dpe
+```
 
-	```bash
-	python preparer_donnees.py
-	python ml.py
-	```
+Le programme télécharge les **CSV DVF géolocalisés Etalab**, avec identifiant de
+mutation, identifiant de parcelle et coordonnées. Les fichiers DVF bruts `.txt` de
+l'ancienne version ne sont pas réutilisés : fabriquer un identifiant avec seulement
+la date et le prix pourrait fusionner des ventes distinctes. Ils peuvent rester
+sur disque. Les anciens `data/clean/dfv_dpe.csv` ne sont pas réutilisés non plus.
 
-2. Vérifiez que `models/HistGradientBoostingRegressor.joblib` existe, puis envoyez les fichiers sur GitHub :
+Les DPE sont collectés **sans limite silencieuse à 100 000 lignes**, par département
+et année d'établissement. Chaque page est suivie jusqu'à la fin du curseur. Un total
+incohérent ou une interruption fait échouer la collecte au lieu de publier un cache
+présenté comme complet. Une extraction via une API vivante peut changer pendant
+la pagination : dans ce cas, relancer la collecte.
 
-	```bash
-	git add app.py requirements.txt README.md models/HistGradientBoostingRegressor.joblib
-	git commit -m "Ajouter l interface de production"
-	git push origin main
-	```
+Sans `--avec-dpe`, seule DVF est collectée. Cela permet de mesurer d'abord un
+modèle de référence DVF. `--force` actualise les sources déjà présentes.
+Utiliser une même livraison DVF pour tous les fichiers ; ne pas mélanger des
+extractions qui se chevauchent. Le chemin distant `latest` peut évoluer.
 
-3. Ouvrez [share.streamlit.io](https://share.streamlit.io), connectez votre compte GitHub et cliquez sur **Create app**.
-4. Sélectionnez le dépôt `chaimackjs/EstimAI_Immo`, la branche `main` et le fichier principal `app.py`.
-5. Cliquez sur **Deploy**. Streamlit fournira une URL publique gratuite pour l'interface.
+## 3. Nettoyer et construire les profils
 
-Le dépôt doit contenir le fichier du modèle : Streamlit Cloud exécute l'application, mais ne lance pas automatiquement l'entraînement des données.
+```bash
+python preparer_donnees.py --force
+```
 
-## Récupération des données dvf:
+Les exécutions suivantes peuvent omettre `--force`. Le cache est invalidé lorsque
+les fichiers sources, le code de nettoyage ou les paramètres changent.
 
-Le lancement manuel du programme nécessite de récupérer manuellement les données disponibles sur le site « https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres ».
+**Unité statistique : une mutation simple avec exactement une ligne de logement,
+une disposition, une parcelle, un prix cohérent et sans local d'activité.** Les
+dépendances sur la même parcelle sont admises et signalées. Le prix reste celui
+de l'ensemble vendu, rapporté à la surface bâtie du logement : il n'isole pas
+la valeur d'un garage ou d'un jardin.
 
-Il faut ensuite télécharger les fichiers correspondant aux cinq dernières années disponibles. Une fois les fichiers téléchargés, il faut les décompresser, récupérer les fichiers texte qu’ils contiennent et les placer dans un dossier nommé data/dvf, qui devra être créé au préalable.
+C'est volontairement restrictif. Une maison répétée sur plusieurs lignes pour
+des raisons cadastrales peut être exclue. Deux lignes d'appartements identiques
+ne sont pas fusionnées arbitrairement. Sans identifiant de local, on ne peut pas
+savoir avec certitude s'il s'agit du même logement. Le modèle n'est donc pas
+évalué sur toutes les transactions immobilières.
 
-## Récupération des données dpe: 
+Les bornes initiales sont dans `BornesDVF` de `nettoyage_dvf.py` : surface de
+9 à 1 000 m², prix total d'au moins 1 000 euros, prix au m² de 100 à 50 000 euros.
+Ce sont des hypothèses de périmètre, pas des règles universelles. Elles peuvent
+écarter des ventes réelles. Les exclusions sont comptées dans le rapport.
+Les fixer avant la comparaison, sans regarder le test pour les ajuster.
 
-Il est possible de récupérer les données dpe sous forme de fichier : "https://www.data.gouv.fr/dataservices/dpe-logements-existants-depuis-juillet-2021" dans la partie : "Les outils à votre disposition" puis selectionner "Un accès en téléchargement aux données sous forme d’une base de données".
-Cependant, la taille du fichier à récupérer est énorme, nous devons opter pour la deuxième option qui est celle de récupérer lesd onnées directement à part de l'api. Le programme récupère un certain nombre de lignes fixes qu'il est possible de changer depuis "main.py", dans la fonction" def recuperer_dpe(nb_ligne=10000)
+Les champs manquants restent manquants ; une surface de terrain inconnue n'est
+pas remplacée par zéro. Des surfaces de terrain contradictoires ne sont pas
+additionnées aveuglément.
 
+### Ce que signifie le rapprochement DPE
 
-## Utilisation des données prétraitées:
+Il s'agit d'un **profil statistique de la commune et du type de bien**, pas du
+DPE individuel du logement. Le programme ne fait pas de faux appariement
+« même commune = même bien ».
 
-Le programme principal récupère les données depuis le dossier cache s'il existe, cela permet d'exécuter le programme plus rapidement sans passer le programme de nettoyage. 
-Pour régénérer le programme il suffit de supprimer et de réexécuter le dossier cache
+Par défaut, les profils couvrent les 730 jours précédant la vente, sans inclure
+le jour de la vente. Ils donnent les proportions A à G, la part F/G, des indicateurs
+d'isolation, l'effectif et l'ancienneté. Une proportion n'est utilisée qu'avec
+au moins 20 observations valides. Les ventes sans profil sont conservées.
+
+```bash
+python preparer_donnees.py --minimum-dpe 20 --fenetre-jours 730 --force
+```
+
+La date de disponibilité utilisée est le maximum des dates d'établissement,
+de réception et de dernière modification disponibles. Cela évite de placer la
+version courante d'un DPE avant une modification connue. Si seule la date
+d'établissement est fournie, la disponibilité est **estimée** et signalée.
+Un DPE modifié récemment peut donc ne pas enrichir une vente ancienne.
+
+**Limite historique :** l'API courante n'est pas une archive de toutes les versions
+anciennes ni de leurs dates exactes de publication. Les DPE retirés peuvent être
+absents. De même, une DVF publiée aujourd'hui peut contenir des corrections
+rétrospectives. Le protocole n'est pas un backtest opérationnel parfaitement
+« tel que connu à la date ». Celui-ci demanderait des instantanés archivés
+et les délais de publication, pour DVF comme pour DPE.
+
+## 4. Entraîner et comparer
+
+```bash
+python ml.py
+```
+
+Le jeu est découpé chronologiquement : environ 64 % apprentissage, 16 % validation,
+20 % test final. Une même journée n'est pas partagée entre les ensembles.
+Les proportions exactes dépendent des dates. Un identifiant de mutation dupliqué
+est refusé. Le sous-échantillonnage éventuel concerne seulement l'apprentissage.
+
+Les candidats utilisent **les mêmes ventes de validation** :
+
+- Médiane locale avec repli commune/type, département/type, type, puis globale.
+- Ridge avec imputation, standardisation numérique et encodage des catégories.
+- CatBoost DVF, puis le même CatBoost DVF + profils DPE si disponibles.
+
+La localisation comprend le code INSEE, le code postal, le département et les
+coordonnées cadastrales disponibles. Ces dernières localisent la parcelle, pas
+nécessairement la porte ou l'appartement.
+
+La cible par défaut est `log(prix_m2)`. Les prédictions sont remises en euros
+avant le calcul des métriques. Le logarithme n'est pas supposé meilleur par
+principe : l'alternative `--sans-log` se compare sur validation. Le logarithme
+modifie la fonction de perte ; l'exponentielle ne fournit pas automatiquement
+une moyenne conditionnelle non biaisée en euros.
+
+La sélection minimise la **MAE en euros/m² sur validation**, y compris avec la
+cible alternative `valeur_fonciere`. L'arrêt anticipé de CatBoost utilise la
+validation, jamais le test. Le meilleur candidat est réentraîné sur apprentissage
++ validation, avec le nombre d'arbres retenu, puis le test est évalué.
+Le modèle final sauvegardé n'a pas appris sur le test.
+
+```bash
+python ml.py --date-test 2025-01-01 --date-validation 2024-01-01
+python ml.py --iterations 1500 --max-train 0
+```
+
+Ces commandes supposent des données suffisantes dans les périodes concernées.
+Fixer les paramètres sur validation, pas en relançant des essais jusqu'à obtenir
+un meilleur score sur le même test. Une validation spatiale séparée serait
+nécessaire pour mesurer la généralisation à des communes inconnues.
+
+### Fichiers utiles
+
+| Fichier | Utilisation |
+|---|---|
+| `reports/qualite_donnees.json` | Volumes bruts, exclusions, DPE dédoublonnés, dates estimées. |
+| `reports/couverture_dpe.csv` | Couverture par année, département et type de bien. |
+| `reports/comparaison_validation.csv` | Comparaison des candidats et apport du DPE. |
+| `reports/metriques.json` | Protocole, versions logicielles et métriques du test final. |
+| `reports/predictions_test.csv` | Prédictions et erreurs individuelles du test. |
+| `reports/erreurs_par_type.csv` | Erreurs appartements/maisons et effectifs. |
+| `reports/erreurs_par_commune.csv` | Erreurs par commune/type, avec effectifs. |
+| `models/meilleur_modele.joblib` | Modèle retenu, schéma, prétraitement et métadonnées. |
+| `models/profils_dpe.joblib` | Profils historiques nécessaires aux candidats enrichis DPE. |
+
+Les métriques incluent MAE, RMSE et R² sur le prix au m² et le prix total,
+erreur relative médiane, MAPE et proportions à moins de 10 % et 20 % d'erreur.
+Une moyenne par commune calculée sur deux ventes n'a pas la même fiabilité que
+sur plusieurs milliers : toujours lire la colonne d'effectif.
+
+## 5. Prédire
+
+`exemple_bien.json` est un logement **fictif**, sans prix connu. Adapter ses
+caractéristiques. Les informations absentes restent manquantes : il vaut mieux
+renseigner les caractéristiques disponibles que laisser le modèle les imputer.
+
+```bash
+python predire.py exemple_bien.json
+```
+
+Le script reconstruit les variables dans le bon ordre, recharge le prétraitement
+et, si nécessaire, le profil DPE antérieur à la date de prédiction. Il fournit
+un prix au m² et un prix total estimés. Il ne produit pas d'intervalle de confiance
+calibré. Une estimation dans une zone, une période ou un segment peu représenté
+peut être mauvaise.
+
+Conserver les modules Python et `profils_dpe.joblib` avec les modèles concernés.
+Les candidats nommés sont appris sur l'apprentissage seul ; `meilleur_modele`
+est réentraîné sur apprentissage + validation. Ne charger que des fichiers
+`joblib` de confiance : ils peuvent exécuter du code lors du chargement.
+
+## 6. Tests
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+Les tests couvrent le nettoyage, les mutations ambiguës, les codes géographiques,
+les bornes temporelles DPE, la pagination simulée, le cache, les découpages,
+l'imputation et un entraînement complet avec rechargement/prédiction.
+
+**Vérifié ici : 40 tests réussis.** L'entraînement de test utilise uniquement
+des données artificielles. Aucun score obtenu sur ces données ne constitue une
+mesure de précision immobilière. Aucun modèle artificiellement entraîné n'est
+livré comme modèle exploitable.
+
+Les appels HTTP ont été testés avec des réponses simulées. Le réseau n'était
+pas accessible depuis le processus Python de l'environnement : le téléchargement
+réel complet n'a pas été exécuté. Les services et documentations ont été
+consultés via le navigateur le 12 septembre 2026. Les données réelles ne
+figuraient pas dans l'archive fournie.
+
+## Sources
+
+Voir les liens et les limites d'interprétation dans `AUDIT.md`.

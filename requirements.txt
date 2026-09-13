@@ -1,5 +1,6 @@
-pandas
-requests
-matplotlib
-scikit-learn
-streamlit
+numpy>=1.26,<3
+pandas>=2.2,<3
+requests>=2.31,<3
+scikit-learn>=1.6,<1.10
+catboost>=1.2.8,<2
+joblib>=1.4,<2

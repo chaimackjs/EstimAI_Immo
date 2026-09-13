@@ -21,8 +21,7 @@ def preparer(dossier=None, force=False, minimum_dpe=20, fenetre_jours=730, sans_
     fichiers_dpe = [] if sans_dpe else sorted((dossier / 'dpe').glob('*.csv'))
     if not fichiers_dvf:
         raise FileNotFoundError('Aucun CSV geo-DVF dans data/dvf. '
-            'Lancer acquisition_donnees.py --departements 69 --annees 2021 2022 2023 2024 2025 '
-            '(adapter le departement). Les TXT bruts ne sont pas reutilises.')
+            'Lancer acquisition_donnees.py --avec-dpe. Les TXT bruts ne sont pas reutilises.')
     sources = [{'fichier': str(p.resolve()), 'taille': p.stat().st_size,
                 'mtime_ns': p.stat().st_mtime_ns} for p in fichiers_dvf + fichiers_dpe]
     code = b''.join((ROOT / f).read_bytes() for f in ['utilitaires.py', 'nettoyage_dvf.py',

@@ -26,8 +26,7 @@ def lire_fichier_dvf(chemin):
         raise ValueError(
             'Le TXT DGFiP ne fournit pas id_mutation. Il ne permet pas ici de '
             'securiser le regroupement. Utiliser les CSV geolocalises Etalab : '
-            'python acquisition_donnees.py --departements 69 --annees 2021 2022 2023 2024 2025 '
-            '(adapter le departement). Les anciens TXT peuvent rester sur disque.')
+            'python acquisition_donnees.py --avec-dpe. Les anciens TXT peuvent rester sur disque.')
     return pd.read_csv(chemin, dtype='string', low_memory=False)
 
 

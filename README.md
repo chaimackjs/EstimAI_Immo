@@ -23,7 +23,7 @@ Exemple avec le département 69 : adapter les départements et les années au pr
 Il n'est pas nécessaire de commencer par toute la France.
 
 ```bash
-python acquisition_donnees.py --departements 69 --annees 2021 2022 2023 2024 2025 --avec-dpe
+python acquisition_donnees.py --avec-dpe
 ```
 
 Le programme télécharge les **CSV DVF géolocalisés Etalab**, avec identifiant de
@@ -144,6 +144,20 @@ Ces commandes supposent des données suffisantes dans les périodes concernées.
 Fixer les paramètres sur validation, pas en relançant des essais jusqu'à obtenir
 un meilleur score sur le même test. Une validation spatiale séparée serait
 nécessaire pour mesurer la généralisation à des communes inconnues.
+
+### Modules de préparation
+
+`utilitaires.py` contient les conversions communes utilisées par tout le
+pipeline. Il normalise les noms de colonnes, les codes géographiques, les
+nombres et les dates. Les valeurs impossibles à convertir deviennent manquantes
+afin de pouvoir être contrôlées par les étapes suivantes.
+
+`rapprochement_dvf_dpe.py` construit des profils DPE par commune et type de
+bien, puis les ajoute aux ventes DVF. Ce n'est pas un appariement avec le DPE
+du logement vendu: les indicateurs décrivent les diagnostics observés dans la
+même commune et le même type de bien pendant une fenêtre historique. Par défaut,
+la fenêtre est de 730 jours et un indicateur n'est calculé qu'à partir de 20
+diagnostics valides.
 
 ### Fichiers utiles
 

@@ -1,5 +1,6 @@
 """Collecte ciblee et exhaustive par departement/annee, avec cache brut."""
 import argparse
+from datetime import date
 from pathlib import Path
 from urllib.parse import urljoin
 import pandas as pd
@@ -12,6 +13,17 @@ from utilitaires import ROOT
 DVF_BASE_URL = 'https://files.data.gouv.fr/geo-dvf/latest/csv'
 DPE_DATASET_URL = 'https://data.ademe.fr/data-fair/api/v1/datasets/dpe03existant'
 DPE_API_URL = DPE_DATASET_URL + '/lines'
+ANNEE_DEBUT = 2021
+TOUS_DEPARTEMENTS = [
+    *(f'{code:02d}' for code in range(1, 20)),
+    '2A', '2B',
+    *(f'{code:02d}' for code in range(21, 96)),
+    '971', '972', '973', '974', '976',
+]
+
+
+def annees_disponibles():
+    return range(ANNEE_DEBUT, date.today().year)
 
 
 def session_http():
@@ -98,18 +110,17 @@ def recuperer_dpe(departement, annee, nb_ligne=None, taille_page=1000, session=N
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--departements', nargs='+', required=True)
-    parser.add_argument('--annees', nargs='+', required=True, type=int)
     parser.add_argument('--avec-dpe', action='store_true', help='Collecter aussi les DPE du meme perimetre.')
     parser.add_argument('--force', action='store_true', help='Actualiser les fichiers deja presents.')
     args = parser.parse_args()
-    telecharger_dvf(args.departements, args.annees, force=args.force)
+    annees = annees_disponibles()
+    telecharger_dvf(TOUS_DEPARTEMENTS, annees, force=args.force)
     if args.avec_dpe:
         dossier = ROOT / 'data' / 'dpe'
         dossier.mkdir(parents=True, exist_ok=True)
         with session_http() as session:
-            for dep in args.departements:
-                for annee in args.annees:
+            for dep in TOUS_DEPARTEMENTS:
+                for annee in annees:
                     chemin = dossier / f'{annee}-{str(dep).upper().zfill(2)}.csv'
                     if chemin.exists() and not args.force:
                         continue

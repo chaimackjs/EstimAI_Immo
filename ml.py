@@ -1,204 +1,223 @@
-import pandas as pd
-import numpy as np
-import os
+"""Comparaison sur validation temporelle, puis une seule evaluation du test final."""
+import argparse
+import json
+import shutil
+import platform
+from importlib.metadata import version
+from pathlib import Path
 import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-from sklearn.linear_model import BayesianRidge, Ridge
-from sklearn.ensemble import HistGradientBoostingRegressor
+import numpy as np
+import pandas as pd
+from catboost import CatBoostRegressor
+from sklearn.base import clone
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import Ridge
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from modeles import BASE_FEATURES, CATEGORIELLES, MedianeLocale, construire_X, predire_bundle
+from rapprochement_dvf_dpe import DPE_FEATURES
+from utilitaires import ROOT, dates, numerique
 
-
-# Chemin vers les données prétraitées
-DATA_PATH = os.path.join("data", "clean", "dfv_dpe.csv")
 RANDOM_STATE = 42
-HGB_FEATURES = [
-    "surface_reelle_bati",
-    "nombre_pieces_principales",
-    "surface_terrain",
-    "nombre_de_lots",
-    "annee_mutation",
-    "mois_mutation",
-    "code_departement",
-    "type_local",
-]
-
-def preparer_donnees(df_model, target="prix_m2"):
-
-    # Sélectionner les colonnes numériques pertinentes pour les features
-    colonnes_features = [
-        "surface_reelle_bati",
-        "nombre_pieces_principales",
-        "surface_terrain",
-        "nombre_de_lots",
-        "annee_mutation",
-        "mois_mutation",
-        "annee_dpe",
-        "etiquette_dpe",
-        "etiquette_ges",
-        "qualite_isolation_enveloppe",
-        "qualite_isolation_murs",
-        "qualite_isolation_menuiseries",
-        "surface_habitable_logement",
-        "annee_construction",
-    ]
-    
-    # Filtrer les colonnes qui existent dans le DataFrame
-    colonnes_existantes = [col for col in colonnes_features if col in df_model.columns]
-    print(f"Colonnes utilisées: {colonnes_existantes}")
-    
-    # Supprimer les lignes avec des valeurs manquantes
-    df_clean = df_model[colonnes_existantes + [target]].dropna()
-    
-    print(f"Nombre d'échantillons après suppression des valeurs manquantes: {len(df_clean)}")
-    
-    # Séparer les features et la cible
-    X = df_clean[colonnes_existantes]
-    y = df_clean[target]
-    
-    # Supprimer les valeurs aberrantes (prix_m2 > 0 et < 50000)
-    if target == "prix_m2":
-        mask = (y > 0) & (y < 50000)
-        X = X[mask]
-        y = y[mask]
-    
-    print(f"Nombre d'échantillons après suppression des valeurs aberrantes: {len(X)}")
-    
-    # Diviser en ensembles d'entraînement et de test
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE)
-    
-    # Normaliser les features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    return X_train_scaled, X_test_scaled, y_train, y_test, scaler, colonnes_existantes
+DATA_PATH = ROOT / 'data' / 'clean' / 'dvf_dpe.csv'
 
 
-def preparer_donnees_hgb(df_model, target="prix_m2"):
-    """Prépare les données HGBR sans supprimer les NaN ni normaliser les variables."""
-    features = [
-        feature
-        for feature in HGB_FEATURES
-        if feature in df_model.columns and df_model[feature].notna().any()
-    ]
-    df_clean = df_model[features + [target]]
-    df_clean = df_clean[df_clean[target].notna()]
-    df_clean = df_clean[(df_clean[target] > 0) & (df_clean[target] < 50_000)]
-
-    X = df_clean[features].copy()
-    for feature in ("code_departement", "type_local"):
-        if feature in X.columns:
-            X[feature] = X[feature].fillna("unknown").astype("category")
-
-    y = df_clean[target]
-    return train_test_split(X, y, test_size=0.2, random_state=RANDOM_STATE), features
-
-def entrainer_modele(X_train, X_test, y_train, y_test, model):
-    
-    print(f"\nEntraînement du modèle ...")
-    
-    model.fit(X_train, y_train)
-    
-    # Prédictions
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
-    
-    # Calculer les métriques
-    metriques = {
-        "rmse_train": np.sqrt(mean_squared_error(y_train, y_pred_train)),
-        "rmse_test": np.sqrt(mean_squared_error(y_test, y_pred_test)),
-        "mae_train": mean_absolute_error(y_train, y_pred_train),
-        "mae_test": mean_absolute_error(y_test, y_pred_test),
-        "r2_train": r2_score(y_train, y_pred_train),
-        "r2_test": r2_score(y_test, y_pred_test),
-    }
-    
-    return model, metriques
-
-def afficher_metriques(metriques, model_nom):
-    """Affiche les métriques d'évaluation du modèle"""
-    print(f"\n{'='*50}")
-    print(model_nom)
-    print(f"{'='*50}")
-    print(f"RMSE Train: {metriques['rmse_train']:.2f}")
-    print(f"RMSE Test:  {metriques['rmse_test']:.2f}")
-    print(f"MAE Train:  {metriques['mae_train']:.2f}")
-    print(f"MAE Test:   {metriques['mae_test']:.2f}")
-    print(f"R² Train:   {metriques['r2_train']:.4f}")
-    print(f"R² Test:    {metriques['r2_test']:.4f}")
-    print(f"{'='*50}\n")
+def decouper_chronologiquement(df, date_test=None, date_validation=None):
+    df = df.sort_values(['date_mutation', 'id_mutation']).copy()
+    if df['id_mutation'].duplicated().any():
+        raise ValueError('id_mutation doit etre unique : regenerer le nettoyage transactionnel.')
+    if df['date_mutation'].isna().any():
+        raise ValueError('Une date de mutation manque.')
+    if len(df) < 10:
+        raise ValueError('Il faut au moins 10 mutations pour trois ensembles distincts.')
+    debut_test = pd.Timestamp(date_test) if date_test else df['date_mutation'].iloc[int(len(df) * .8)]
+    developpement = df[df['date_mutation'] < debut_test]
+    test = df[df['date_mutation'] >= debut_test]
+    if developpement.empty:
+        raise ValueError('Pas de donnees anterieures au test.')
+    debut_valid = (pd.Timestamp(date_validation) if date_validation else
+                   developpement['date_mutation'].iloc[int(len(developpement) * .8)])
+    train = developpement[developpement['date_mutation'] < debut_valid]
+    valid = developpement[developpement['date_mutation'] >= debut_valid]
+    if min(len(train), len(valid), len(test)) < 2:
+        raise ValueError('Train/validation/test doivent contenir au moins deux mutations chacun. '
+                         'Adapter les dates ou collecter davantage de donnees.')
+    return train, valid, test
 
 
-def enregistrer_model(model,nom_model):
-    os.makedirs("models",exist_ok=True)
+def metriques(df, prediction, cible='prix_m2'):
+    surface = numerique(df['surface_reelle_bati']).to_numpy()
+    if cible == 'prix_m2':
+        reel_m2 = numerique(df['prix_m2']).to_numpy()
+        pred_m2 = prediction
+    else:
+        reel_m2 = numerique(df['valeur_fonciere']).to_numpy() / surface
+        pred_m2 = prediction / surface
+    reel_total, pred_total = reel_m2 * surface, pred_m2 * surface
+    erreurs = np.abs(pred_m2 - reel_m2) / reel_m2
+    return {'n': len(df),
+        'mae_eur_m2': float(mean_absolute_error(reel_m2, pred_m2)),
+        'rmse_eur_m2': float(np.sqrt(mean_squared_error(reel_m2, pred_m2))),
+        'r2_prix_m2': float(r2_score(reel_m2, pred_m2)),
+        'mae_prix_total': float(mean_absolute_error(reel_total, pred_total)),
+        'rmse_prix_total': float(np.sqrt(mean_squared_error(reel_total, pred_total))),
+        'r2_prix_total': float(r2_score(reel_total, pred_total)),
+        'mape_pourcent': float(100 * erreurs.mean()),
+        'erreur_relative_mediane_pourcent': float(100 * np.median(erreurs)),
+        'part_erreur_10pct': float((erreurs <= .10).mean()),
+        'part_erreur_20pct': float((erreurs <= .20).mean())}
 
-    chemin=os.path.join("models",f"{nom_model}.joblib")
 
-    joblib.dump(model,chemin)
+def modele_ridge():
+    numeriques = [c for c in BASE_FEATURES if c not in CATEGORIELLES]
+    preprocess = ColumnTransformer([
+        ('numeriques', Pipeline([
+            ('imputation', SimpleImputer(strategy='median', add_indicator=True, keep_empty_features=True)),
+            ('standardisation', StandardScaler())]), numeriques),
+        ('categories', OneHotEncoder(handle_unknown='ignore'), CATEGORIELLES)])
+    return Pipeline([('pretraitement', preprocess), ('regression', Ridge(alpha=10, solver='lsqr'))])
 
-    print(f"Modèle enregistré : {chemin}")
+
+def echantillonner_train(df, maximum):
+    if maximum and len(df) > maximum:
+        return df.sample(n=maximum, random_state=RANDOM_STATE).sort_values('date_mutation')
+    return df
+
+
+def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iterations=1000,
+                         log_cible=True, max_train=250_000, cible='prix_m2',
+                         date_test=None, date_validation=None, chemin_profils=None):
+    models = Path(dossier_models or ROOT / 'models')
+    reports = Path(dossier_reports or ROOT / 'reports')
+    models.mkdir(parents=True, exist_ok=True)
+    reports.mkdir(parents=True, exist_ok=True)
+    df = df.copy()
+    requis = {'id_mutation', 'date_mutation', 'surface_reelle_bati', 'prix_m2', 'valeur_fonciere',
+              'code_insee', 'code_departement', 'type_local'}
+    if manque := sorted(requis - set(df)):
+        raise ValueError(f'Colonnes absentes : {manque}. Relancer preparer_donnees.py --force.')
+    df['date_mutation'] = dates(df['date_mutation'])
+    for c in ['surface_reelle_bati', 'prix_m2', 'valeur_fonciere']:
+        df[c] = numerique(df[c])
+    if not (df['surface_reelle_bati'].gt(0) & df[cible].gt(0)).all():
+        raise ValueError('Surface/cible invalide. Corriger le nettoyage, sans filtrer differemment par modele.')
+    if not np.allclose(df['prix_m2'], df['valeur_fonciere'] / df['surface_reelle_bati']):
+        raise ValueError('prix_m2 et valeur_fonciere/surface sont incoherents.')
+    train_complet, valid, test = decouper_chronologiquement(df, date_test, date_validation)
+    train = echantillonner_train(train_complet, max_train)
+    print(f'Train : {len(train):,} ; validation : {len(valid):,} ; test reserve : {len(test):,}')
+    avec_dpe = ('dpe_profil_disponible' in train and
+                pd.to_numeric(train['dpe_profil_disponible'], errors='coerce').gt(0).any())
+    if avec_dpe and (chemin_profils is None or not Path(chemin_profils).exists()):
+        raise ValueError('Les profils DPE sont necessaires pour rendre le modele reutilisable en prediction.')
+    if avec_dpe:
+        destination = models / 'profils_dpe.joblib'
+        if Path(chemin_profils).resolve() != destination.resolve():
+            shutil.copy2(chemin_profils, destination)
+    parametres = dict(iterations=iterations, depth=7, learning_rate=.05, loss_function='RMSE',
+                      random_seed=RANDOM_STATE, thread_count=4, allow_writing_files=False)
+    candidats = [
+        ('Mediane_locale', MedianeLocale(), BASE_FEATURES),
+        ('Ridge_DVF', modele_ridge(), BASE_FEATURES),
+        ('CatBoost_DVF', CatBoostRegressor(**parametres), BASE_FEATURES)]
+    if avec_dpe:
+        candidats.append(('CatBoost_DVF_DPE', CatBoostRegressor(**parametres), BASE_FEATURES + DPE_FEATURES))
+    else:
+        print('Pas de profil DPE suffisamment renseigne dans le train : comparaison DVF seule.')
+    y_train = np.log(train[cible].to_numpy()) if log_cible else train[cible].to_numpy()
+    y_valid = np.log(valid[cible].to_numpy()) if log_cible else valid[cible].to_numpy()
+    versions = {nom: version(nom) for nom in ['numpy', 'pandas', 'scikit-learn', 'catboost', 'joblib']}
+    versions['python'] = platform.python_version()
+    scores, bundles = [], {}
+    for nom, modele, colonnes in candidats:
+        print(f'\nEntrainement : {nom}')
+        X_train, X_valid = construire_X(train, colonnes), construire_X(valid, colonnes)
+        if isinstance(modele, CatBoostRegressor):
+            modele.fit(X_train, y_train, cat_features=CATEGORIELLES,
+                       eval_set=(X_valid, y_valid), early_stopping_rounds=80,
+                       use_best_model=True, verbose=False)
+        else:
+            modele.fit(X_train, y_train)
+        bundle = {'format_version': 2, 'versions': versions, 'nom': nom, 'modele': modele, 'colonnes': colonnes,
+                  'categoriels': CATEGORIELLES, 'cible': cible, 'log_cible': log_cible,
+                  'profils_dpe': 'profils_dpe.joblib' if nom.endswith('_DPE') else None,
+                  'fin_apprentissage': str(train['date_mutation'].max().date())}
+        train_scores = metriques(train, predire_bundle(bundle, train), cible)
+        valid_scores = metriques(valid, predire_bundle(bundle, valid), cible)
+        scores.append({'modele': nom, **valid_scores, 'mae_train_eur_m2': train_scores['mae_eur_m2']})
+        bundles[nom] = bundle
+        joblib.dump(bundle, models / f'{nom}.joblib')
+        print(f"MAE train = {train_scores['mae_eur_m2']:.1f} EUR/m2 ; "
+              f"MAE validation = {valid_scores['mae_eur_m2']:.1f} EUR/m2 ; "
+              f"R2 validation = {valid_scores['r2_prix_m2']:.3f}")
+    tableau = pd.DataFrame(scores).sort_values('mae_eur_m2')
+    tableau.to_csv(reports / 'comparaison_validation.csv', index=False)
+    # Le choix est termine AVANT tout appel predict() sur le test.
+    meilleur_nom = tableau.iloc[0]['modele']
+    meilleur = bundles[meilleur_nom].copy()
+    selectionne = meilleur['modele']
+    meilleur['modele'] = clone(selectionne)
+    if isinstance(selectionne, CatBoostRegressor):
+        meilleur['modele'].set_params(iterations=selectionne.tree_count_)
+    developpement = echantillonner_train(pd.concat([train_complet, valid]), max_train)
+    X_dev = construire_X(developpement, meilleur['colonnes'])
+    y_dev = np.log(developpement[cible].to_numpy()) if log_cible else developpement[cible].to_numpy()
+    if isinstance(meilleur['modele'], CatBoostRegressor):
+        meilleur['modele'].fit(X_dev, y_dev, cat_features=CATEGORIELLES, verbose=False)
+    else:
+        meilleur['modele'].fit(X_dev, y_dev)
+    meilleur['fin_apprentissage'] = str(developpement['date_mutation'].max().date())
+    meilleur['debut_test'] = str(test['date_mutation'].min().date())
+    prediction = predire_bundle(meilleur, test)
+    score_test = metriques(test, prediction, cible)
+    meilleur['metriques_test'] = score_test
+    joblib.dump(meilleur, models / 'meilleur_modele.joblib')
+    diagnostic = test[['id_mutation', 'date_mutation', 'code_insee', 'type_local',
+                       'surface_reelle_bati', 'prix_m2', 'valeur_fonciere']].copy()
+    diagnostic['prix_m2_predit'] = prediction if cible == 'prix_m2' else prediction / diagnostic['surface_reelle_bati']
+    diagnostic['prix_total_predit'] = diagnostic['prix_m2_predit'] * diagnostic['surface_reelle_bati']
+    diagnostic['erreur_absolue_eur_m2'] = (diagnostic['prix_m2_predit'] - diagnostic['prix_m2']).abs()
+    diagnostic['erreur_relative'] = diagnostic['erreur_absolue_eur_m2'] / diagnostic['prix_m2']
+    diagnostic.to_csv(reports / 'predictions_test.csv', index=False)
+    for cles, fichier in [(['type_local'], 'erreurs_par_type.csv'),
+                          (['code_insee', 'type_local'], 'erreurs_par_commune.csv')]:
+        (diagnostic.groupby(cles).agg(n=('id_mutation', 'size'),
+            mae_eur_m2=('erreur_absolue_eur_m2', 'mean'),
+            erreur_relative_mediane=('erreur_relative', 'median'))
+            .to_csv(reports / fichier))
+    rapport = {'modele_selectionne_sur_validation': meilleur_nom, 'versions': versions, 'cible': cible,
+        'log_cible': log_cible, 'validation': scores, 'test_final': score_test,
+        'decoupage': {nom: {'n': len(part), 'debut': str(part['date_mutation'].min().date()),
+                            'fin': str(part['date_mutation'].max().date())}
+                     for nom, part in [('train', train), ('validation', valid), ('test', test)]},
+        'n_apprentissage_final': len(developpement),
+        'objectif_selection': 'MAE en EUR/m2 sur validation, jamais sur test',
+        'limite': 'Evaluation sur mutations simples du perimetre collecte, pas sur toutes les ventes.'}
+    (reports / 'metriques.json').write_text(json.dumps(rapport, indent=2, allow_nan=False), encoding='utf-8')
+    print(f'\nModele retenu : {meilleur_nom}')
+    print(f"TEST FINAL : MAE = {score_test['mae_eur_m2']:.1f} EUR/m2 ; "
+          f"MAE prix total = {score_test['mae_prix_total']:.0f} EUR ; R2 = {score_test['r2_prix_m2']:.3f}")
+    return rapport
 
 
 def main():
-    
-    # Charger les données
-    print("Chargement des données...")
-    df_model = pd.read_csv(DATA_PATH)
-
-    df_model = df_model.sample(
-        n=min(250_000, len(df_model)),
-        random_state=RANDOM_STATE,
-    )
-
-
-    # Préparer les données
-    print("\nPréparation des données...")
-    X_train, X_test, y_train, y_test, scaler, colonnes_features = preparer_donnees(
-        df_model,
-        target="prix_m2",
-    )
-    (X_train_hgb, X_test_hgb, y_train_hgb, y_test_hgb), hgb_features = preparer_donnees_hgb(
-        df_model,
-        target="prix_m2",
-    )
-    print(f"Variables HGBR utilisées: {hgb_features}")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--donnees', type=Path, default=DATA_PATH)
+    parser.add_argument('--cible', choices=['prix_m2', 'valeur_fonciere'], default='prix_m2')
+    parser.add_argument('--sans-log', action='store_true')
+    parser.add_argument('--iterations', type=int, default=1000)
+    parser.add_argument('--max-train', type=int, default=250000, help='0 = toutes les mutations du train.')
+    parser.add_argument('--date-test', help='Debut du test final, au format AAAA-MM-JJ.')
+    parser.add_argument('--date-validation', help='Debut de la validation, avant la date de test.')
+    args = parser.parse_args()
+    df = pd.read_csv(args.donnees, dtype={c: 'string' for c in CATEGORIELLES + ['id_mutation']}, low_memory=False)
+    entrainer_et_evaluer(df, cible=args.cible, iterations=args.iterations,
+        log_cible=not args.sans_log, max_train=args.max_train,
+        date_test=args.date_test, date_validation=args.date_validation,
+        chemin_profils=args.donnees.parent / 'profils_dpe.joblib')
 
 
-    model_list = [
-        {"model_nom":"LinearRegression","model":LinearRegression()},
-#        {"model_nom":"RandomForestRegressor","model":RandomForestRegressor()},
-        {"model_nom":"BayesianRidge","model":BayesianRidge()},
-        {"model_nom":"Ridge","model":Ridge()},
-        {"model_nom":"HistGradientBoostingRegressor","model":HistGradientBoostingRegressor()},  
-    ]
-
-    for model_dic in model_list:
-
-        # Entraîner le modèle
-        if model_dic["model_nom"] == "HistGradientBoostingRegressor":
-            model, metriques = entrainer_modele(
-                X_train_hgb,
-                X_test_hgb,
-                y_train_hgb,
-                y_test_hgb,
-                model_dic["model"],
-            )
-        else:
-            model, metriques = entrainer_modele(
-                X_train,
-                X_test,
-                y_train,
-                y_test,
-                model_dic["model"],
-            )
-        
-        # Afficher les métriques
-        afficher_metriques(metriques,model_dic["model_nom"])
-
-        enregistrer_model(model,model_dic["model_nom"])
-    
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

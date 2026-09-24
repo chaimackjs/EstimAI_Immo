@@ -22,6 +22,7 @@ NUMERIQUES = ['valeur_fonciere', 'surface_reelle_bati', 'surface_terrain',
 
 
 def lire_fichier_dvf(chemin):
+    """Lire un fichier DVF géolocalisé au format CSV."""
     if str(chemin).lower().endswith('.txt'):
         raise ValueError(
             'Le TXT DGFiP ne fournit pas id_mutation. Il ne permet pas ici de '
@@ -31,6 +32,7 @@ def lire_fichier_dvf(chemin):
 
 
 def nettoyer_dvf(df, bornes=None, retourner_rapport=False):
+    """Transformer les lignes DVF en mutations résidentielles fiables."""
     bornes = bornes or BornesDVF()
     df = normaliser_colonnes(df).rename(columns={'nombre_lots': 'nombre_de_lots'})
     absentes = sorted(set(REQUIS) - set(df.columns))

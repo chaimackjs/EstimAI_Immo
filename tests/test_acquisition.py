@@ -1,5 +1,5 @@
 import pytest
-from acquisition_donnees import recuperer_dpe
+from acquisition_donnees import recuperer_dpe, lire_departements, annees_disponibles
 
 
 class Reponse:
@@ -51,3 +51,10 @@ def test_page_vide_avec_suite_est_erreur():
 def test_total_incomplet_sans_curseur_est_refuse():
     with pytest.raises(RuntimeError, match='Collecte incomplete'):
         recuperer_dpe('69', 2024, session=Session([{'total': 5, 'results': [{'numero_dpe': '1'}]}]))
+
+
+def test_perimetre_explicit_et_annees_bornes():
+    assert lire_departements(['69,01', '69']) == ['69', '01']
+    assert list(annees_disponibles(2023, 2024)) == [2023, 2024]
+    with pytest.raises(ValueError):
+        lire_departements(['99'])

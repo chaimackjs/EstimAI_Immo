@@ -22,11 +22,25 @@ TOUS_DEPARTEMENTS = [
 ]
 
 
-def annees_disponibles():
-    return range(ANNEE_DEBUT, date.today().year)
+def annees_disponibles(debut=ANNEE_DEBUT, fin=None):
+    """Retourner les années complètes comprises dans la période demandée."""
+    fin = date.today().year - 1 if fin is None else fin
+    if debut < ANNEE_DEBUT or fin < debut or fin >= date.today().year:
+        raise ValueError(f'Periode invalide : choisir des annees entre {ANNEE_DEBUT} et {date.today().year - 1}.')
+    return range(debut, fin + 1)
+
+
+def lire_departements(valeurs):
+    """Accepter ``69 01`` ou ``69,01`` et refuser tout perimetre implicite."""
+    departements = [dep.strip().upper().zfill(2) for valeur in valeurs for dep in valeur.split(',') if dep.strip()]
+    inconnus = sorted(set(departements) - set(TOUS_DEPARTEMENTS))
+    if not departements or inconnus:
+        raise ValueError(f'Departement(s) invalide(s) : {", ".join(inconnus) or "aucun"}.')
+    return list(dict.fromkeys(departements))
 
 
 def session_http():
+    """Créer une session HTTP avec reprise automatique sur erreur."""
     session = requests.Session()
     session.headers['User-Agent'] = 'EstimAI-Immo/2.0 (educational-data-analysis)'
     retry = Retry(total=4, backoff_factor=1, status_forcelist=[429, 500, 502, 503, 504])
@@ -35,6 +49,7 @@ def session_http():
 
 
 def telecharger_dvf(departements, annees, dossier=None, force=False):
+    """Télécharger les fichiers DVF demandés dans le cache local."""
     dossier = Path(dossier or ROOT / 'data' / 'dvf')
     dossier.mkdir(parents=True, exist_ok=True)
     with session_http() as session:
@@ -109,23 +124,31 @@ def recuperer_dpe(departement, annee, nb_ligne=None, taille_page=1000, session=N
 
 
 def main():
+    """Exécuter la collecte depuis la ligne de commande."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--avec-dpe', action='store_true', help='Collecter aussi les DPE du meme perimetre.')
     parser.add_argument('--force', action='store_true', help='Actualiser les fichiers deja presents.')
+    parser.add_argument('--departements', nargs='+', required=True,
+                        help='Departements a collecter, par exemple : 69 ou 69,01.')
+    parser.add_argument('--annee-debut', type=int, default=ANNEE_DEBUT)
+    parser.add_argument('--annee-fin', type=int, default=date.today().year - 1)
+    parser.add_argument('--taille-page', type=int, default=10_000,
+                        help='Lignes DPE par requete API ; 10 000 limite la duree sans tronquer.')
     args = parser.parse_args()
-    annees = annees_disponibles()
-    telecharger_dvf(TOUS_DEPARTEMENTS, annees, force=args.force)
+    departements = lire_departements(args.departements)
+    annees = annees_disponibles(args.annee_debut, args.annee_fin)
+    telecharger_dvf(departements, annees, force=args.force)
     if args.avec_dpe:
         dossier = ROOT / 'data' / 'dpe'
         dossier.mkdir(parents=True, exist_ok=True)
         with session_http() as session:
-            for dep in TOUS_DEPARTEMENTS:
+            for dep in departements:
                 for annee in annees:
                     chemin = dossier / f'{annee}-{str(dep).upper().zfill(2)}.csv'
                     if chemin.exists() and not args.force:
                         continue
                     print(f'Collecte DPE complete : departement {dep}, annee {annee}')
-                    df = recuperer_dpe(dep, annee, session=session)
+                    df = recuperer_dpe(dep, annee, taille_page=args.taille_page, session=session)
                     temporaire = chemin.with_suffix('.csv.part')
                     df.to_csv(temporaire, index=False)
                     temporaire.replace(chemin)

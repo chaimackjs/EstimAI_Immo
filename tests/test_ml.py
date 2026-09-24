@@ -83,11 +83,12 @@ def test_complet_selection_refit_rechargement_et_prediction(tmp_path):
     profils = construire_profils_dpe(nettoyer_dpe(pd.DataFrame(lignes)))
     df = appliquer_profils_dpe(df, profils, minimum_dpe=2)
     chemin_profils = tmp_path / 'source-profils.joblib'
-    joblib.dump({'profils': profils, 'minimum_dpe': 2, 'fenetre_jours': 730}, chemin_profils)
+    joblib.dump({'profils': profils, 'minimum_dpe': 2, 'fenetre_jours': 730,
+                 'anciennete_max_jours': 730}, chemin_profils)
     models, reports = tmp_path / 'models', tmp_path / 'reports'
     rapport = entrainer_et_evaluer(df, models, reports, iterations=15, max_train=0,
                                   chemin_profils=chemin_profils)
-    assert len(rapport['validation']) == 4
+    assert len(rapport['validation']) >= 4
     assert len({ligne['n'] for ligne in rapport['validation']}) == 1
     assert rapport['test_final']['n'] == len(decouper_chronologiquement(df)[2])
     choix = min(rapport['validation'], key=lambda x: x['mae_eur_m2'])['modele']
@@ -101,3 +102,6 @@ def test_complet_selection_refit_rechargement_et_prediction(tmp_path):
     dpe_resultat = predire_biens(entree, models / 'CatBoost_DVF_DPE.joblib')
     assert dpe_resultat.profil_dpe_disponible.iloc[0]
     assert (reports / 'metriques.json').exists()
+    importance = pd.read_csv(reports / 'importance_variables.csv')
+    assert importance.score_pondere_pct.sum() == pytest.approx(100)
+    assert {'variable', 'importance_catboost_pct', 'importance_permutation_pct', 'retenue'} <= set(importance)

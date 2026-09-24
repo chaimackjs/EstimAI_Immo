@@ -23,7 +23,7 @@ Exemple avec le département 69 : adapter les départements et les années au pr
 Il n'est pas nécessaire de commencer par toute la France.
 
 ```bash
-python acquisition_donnees.py --avec-dpe
+python acquisition_donnees.py --departements 69 --annee-debut 2021 --annee-fin 2025 --avec-dpe
 ```
 
 Le programme télécharge les **CSV DVF géolocalisés Etalab**, avec identifiant de
@@ -105,7 +105,7 @@ et les délais de publication, pour DVF comme pour DPE.
 ## 4. Entraîner et comparer
 
 ```bash
-python ml.py
+python ml.py --r2-minimum 0.75
 ```
 
 Le jeu est découpé chronologiquement : environ 64 % apprentissage, 16 % validation,
@@ -117,7 +117,12 @@ Les candidats utilisent **les mêmes ventes de validation** :
 
 - Médiane locale avec repli commune/type, département/type, type, puis globale.
 - Ridge avec imputation, standardisation numérique et encodage des catégories.
-- CatBoost DVF, puis le même CatBoost DVF + profils DPE si disponibles.
+- CatBoost DVF de référence.
+- CatBoost segmenté, avec un modèle appartement et un modèle maison, si les deux
+  segments contiennent assez de ventes.
+- CatBoost DVF enrichi de comparables historiques par code postal et type de
+  bien ; il n'est retenu que s'il améliore la validation.
+- CatBoost DVF + profils DPE si la couverture DPE est suffisante.
 
 La localisation comprend le code INSEE, le code postal, le département et les
 coordonnées cadastrales disponibles. Ces dernières localisent la parcelle, pas
@@ -133,7 +138,8 @@ La sélection minimise la **MAE en euros/m² sur validation**, y compris avec la
 cible alternative `valeur_fonciere`. L'arrêt anticipé de CatBoost utilise la
 validation, jamais le test. Le meilleur candidat est réentraîné sur apprentissage
 + validation, avec le nombre d'arbres retenu, puis le test est évalué.
-Le modèle final sauvegardé n'a pas appris sur le test.
+Le modèle final sauvegardé n'a pas appris sur le test. Si le R² du test est sous
+le seuil indiqué, il est marqué comme bloqué et `predire.py` refuse de l'utiliser.
 
 ```bash
 python ml.py --date-test 2025-01-01 --date-validation 2024-01-01
@@ -159,6 +165,11 @@ même commune et le même type de bien pendant une fenêtre historique. Par déf
 la fenêtre est de 730 jours et un indicateur n'est calculé qu'à partir de 20
 diagnostics valides.
 
+`modeles.py` construit aussi des comparables de marché par code postal et type
+de bien : nombre de ventes et prix moyen au m² sur les 365 et 730 jours
+précédents. Une vente ne peut consulter ni son propre prix, ni un prix futur.
+Le profil est reconstruit lors d'une prédiction future.
+
 ### Fichiers utiles
 
 | Fichier | Utilisation |
@@ -172,11 +183,18 @@ diagnostics valides.
 | `reports/erreurs_par_commune.csv` | Erreurs par commune/type, avec effectifs. |
 | `models/meilleur_modele.joblib` | Modèle retenu, schéma, prétraitement et métadonnées. |
 | `models/profils_dpe.joblib` | Profils historiques nécessaires aux candidats enrichis DPE. |
+| `models/profils_marche.joblib` | Comparables historiques nécessaires au candidat marché. |
 
 Les métriques incluent MAE, RMSE et R² sur le prix au m² et le prix total,
 erreur relative médiane, MAPE et proportions à moins de 10 % et 20 % d'erreur.
 Une moyenne par commune calculée sur deux ventes n'a pas la même fiabilité que
 sur plusieurs milliers : toujours lire la colonne d'effectif.
+
+`reports/importance_variables.csv` classe les paramètres du meilleur CatBoost
+sur validation. Son score pondéré combine 60 % d'importance CatBoost et 40 %
+d'importance par permutation de la MAE. Une variable est retenue à partir de
+1 %, seuil modifiable avec `--seuil-importance`. Ce classement n'utilise jamais
+le jeu de test final.
 
 ## 5. Prédire
 

@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 from nettoyage_dvf import nettoyer_dvf, lire_fichier_dvf
 from nettoyage_dpe import nettoyer_dpe
+from modeles import appliquer_profils_marche, construire_profils_marche
 from rapprochement_dvf_dpe import rapprocher_dvf_dpe, construire_profils_dpe, appliquer_profils_dpe
 from utilitaires import normaliser_code
 
@@ -84,6 +85,18 @@ def test_codes_conservent_zeros_corse_outre_mer():
     assert pd.isna(codes.iloc[-1])
 
 
+def test_comparables_marche_strictement_anterieurs_a_la_vente():
+    ventes = nettoyer_dvf(pd.DataFrame([
+        vente(id_mutation='1', date_mutation='2024-01-01', valeur_fonciere='100000', surface_reelle_bati='50'),
+        vente(id_mutation='2', date_mutation='2024-02-01', valeur_fonciere='150000', surface_reelle_bati='50'),
+        vente(id_mutation='3', date_mutation='2024-03-01', valeur_fonciere='200000', surface_reelle_bati='50'),
+    ]))
+    resultat = appliquer_profils_marche(ventes, construire_profils_marche(ventes), minimum_ventes=1)
+    assert resultat.iloc[0].marche_profil_disponible == 0
+    assert resultat.iloc[2].marche_profil_disponible == 1
+    assert resultat.iloc[2].marche_prix_m2_moyen_365j == 2500
+
+
 def test_refus_faux_regroupement_txt():
     with pytest.raises(ValueError, match='id_mutation'):
         lire_fichier_dvf('ValeursFoncieres-2024.txt')
@@ -101,6 +114,16 @@ def test_nettoyage_dpe_types_et_version_la_plus_recente():
 def test_dpe_etablissement_seul_est_signale():
     df = nettoyer_dpe(pd.DataFrame([diagnostic(date_reception_dpe=None, date_derniere_modification_dpe=None)]))
     assert df.iloc[0].disponibilite_estimee == 1
+
+
+def test_aliases_isolation_api_ademe_actuelle():
+    df = nettoyer_dpe(pd.DataFrame([diagnostic(
+        qualite_isolation_enveloppe=None, qualite_isolation_murs=None,
+        qualite_isolation_menuiseries=None, qualite_isol_enveloppe='bonne',
+        qualite_isol_mur='moyenne', qualite_isol_menuiserie='tres bonne')]))
+    assert df.iloc[0].qualite_isolation_enveloppe_score == 3
+    assert df.iloc[0].qualite_isolation_murs_score == 2
+    assert df.iloc[0].qualite_isolation_menuiseries_score == 4
 
 
 def test_pas_de_dpe_futur_ni_du_jour_de_vente():
@@ -148,6 +171,15 @@ def test_minimum_dpe_ne_supprime_pas_vente():
     assert resultat.iloc[0].dpe_nb_diagnostics == 1
     assert resultat.iloc[0].dpe_profil_disponible == 0
     assert pd.isna(resultat.iloc[0].dpe_part_C)
+
+
+def test_profil_dpe_trop_ancien_refuse():
+    dvf = nettoyer_dvf(pd.DataFrame([vente(date_mutation='2024-06-01')]))
+    dpe = nettoyer_dpe(pd.DataFrame([diagnostic(date_derniere_modification_dpe='2024-01-03')]))
+    resultat = rapprocher_dvf_dpe(dvf, dpe, minimum_dpe=1, anciennete_max_jours=30).iloc[0]
+    assert resultat.dpe_nb_diagnostics == 1
+    assert resultat.dpe_profil_disponible == 0
+    assert pd.isna(resultat.dpe_part_C)
 
 
 def test_etiquette_inconnue_ne_compte_pas_comme_non_passoire():

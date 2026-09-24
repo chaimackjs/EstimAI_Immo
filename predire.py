@@ -4,15 +4,18 @@ import json
 from pathlib import Path
 import joblib
 import pandas as pd
-from modeles import predire_bundle
+from modeles import appliquer_profils_marche, predire_bundle
 from rapprochement_dvf_dpe import appliquer_profils_dpe
 from utilitaires import ROOT, dates, normaliser_code, numerique
 
 
 def predire_biens(biens, chemin_modele=None):
+    """Estimer le prix au mètre carré et le prix total de biens."""
     chemin_modele = Path(chemin_modele or ROOT / 'models' / 'meilleur_modele.joblib')
     # Ne charger que des fichiers joblib produits par vous : pickle execute du code.
     bundle = joblib.load(chemin_modele)
+    if bundle.get('autorise_deploiement') is False:
+        raise RuntimeError('Modele bloque : ses metriques finales ne satisfont pas le seuil de qualite.')
     df = pd.DataFrame([biens] if isinstance(biens, dict) else biens)
     requis = {'date_mutation', 'code_insee', 'type_local', 'surface_reelle_bati'}
     if manquants := requis - set(df):
@@ -28,12 +31,21 @@ def predire_biens(biens, chemin_modele=None):
         outre_mer = df['code_insee'].str.startswith(('97', '98'), na=False)
         df['code_departement'] = df['code_insee'].str[:2].where(~outre_mer, df['code_insee'].str[:3])
     df['code_type_local'] = df['type_local'].map({'Maison': 1, 'Appartement': 2})
+    if bundle.get('profils_marche'):
+        fichier = chemin_modele.parent / bundle['profils_marche']
+        if not fichier.exists():
+            raise FileNotFoundError(f'Profil de marche manquant : {fichier}. Conserver ce fichier avec le modele.')
+        profils_marche = joblib.load(fichier)
+        df = appliquer_profils_marche(
+            df, profils_marche['profils'], profils_marche['minimum_ventes'])
     if bundle['profils_dpe']:
         fichier = chemin_modele.parent / bundle['profils_dpe']
         if not fichier.exists():
             raise FileNotFoundError(f'Profil DPE manquant : {fichier}. Conserver ce fichier avec le modele.')
         profils = joblib.load(fichier)
-        df = appliquer_profils_dpe(df, profils['profils'], profils['fenetre_jours'], profils['minimum_dpe'])
+        df = appliquer_profils_dpe(
+            df, profils['profils'], profils['fenetre_jours'], profils['minimum_dpe'],
+            profils.get('anciennete_max_jours', 365))
     prediction = predire_bundle(bundle, df)
     prix_m2 = prediction if bundle['cible'] == 'prix_m2' else prediction / df['surface_reelle_bati'].to_numpy()
     resultat = df[['date_mutation', 'code_insee', 'type_local', 'surface_reelle_bati']].copy()
@@ -42,10 +54,13 @@ def predire_biens(biens, chemin_modele=None):
     resultat['apres_fin_apprentissage'] = df['date_mutation'] > pd.Timestamp(bundle['fin_apprentissage'])
     if 'dpe_profil_disponible' in df:
         resultat['profil_dpe_disponible'] = df['dpe_profil_disponible'].astype(bool)
+    if 'marche_profil_disponible' in df:
+        resultat['profil_marche_disponible'] = df['marche_profil_disponible'].astype(bool)
     return resultat
 
 
 def main():
+    """Prédire les biens fournis en JSON depuis la ligne de commande."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('fichier_json', type=Path)
     parser.add_argument('--modele', type=Path, default=ROOT / 'models' / 'meilleur_modele.joblib')

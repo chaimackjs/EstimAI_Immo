@@ -1,10 +1,15 @@
 """Comparaison sur validation temporelle, puis une seule evaluation du test final."""
+
 import argparse
+import hashlib
 import json
+import os
 import shutil
 import platform
+from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
+
 import joblib
 import numpy as np
 import pandas as pd
@@ -17,6 +22,7 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
 from modeles import (BASE_FEATURES, BASE_FEATURES_DVF, CATEGORIELLES, FEATURES_ENRICHIES,
                      FEATURES_ENRICHIES_MARCHE, MARCHE_FEATURES, CatBoostParType,
                      MedianeLocale, construire_X, predire_bundle)
@@ -27,24 +33,46 @@ RANDOM_STATE = 42
 DATA_PATH = ROOT / 'data' / 'clean' / 'dvf_dpe.csv'
 
 
+def informations_version_modele(manifeste=None):
+    """Construire une version traçable du modèle entraîné."""
+    chemin_manifeste = Path(manifeste or ROOT / 'data' / 'clean' / 'manifest.json')
+    sha = os.getenv('GITHUB_SHA', 'local')
+    date_utc = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    empreinte = (hashlib.sha256(chemin_manifeste.read_bytes()).hexdigest()
+                 if chemin_manifeste.exists() else None)
+
+    return {
+        'identifiant': os.getenv('MODEL_VERSION', f'{date_utc[:10]}-{sha[:7]}'),
+        'date_utc': date_utc,
+        'git_sha': sha,
+        'github_run_id': os.getenv('GITHUB_RUN_ID'),
+        'github_run_number': os.getenv('GITHUB_RUN_NUMBER'),
+        'manifest_sha256': empreinte,
+    }
+
+
 def decouper_chronologiquement(df, date_test=None, date_validation=None):
     """Séparer les données en ensembles temporels sans chevauchement."""
     df = df.sort_values(['date_mutation', 'id_mutation']).copy()
+
     if df['id_mutation'].duplicated().any():
         raise ValueError('id_mutation doit etre unique : regenerer le nettoyage transactionnel.')
     if df['date_mutation'].isna().any():
         raise ValueError('Une date de mutation manque.')
     if len(df) < 10:
         raise ValueError('Il faut au moins 10 mutations pour trois ensembles distincts.')
+
     debut_test = pd.Timestamp(date_test) if date_test else df['date_mutation'].iloc[int(len(df) * .8)]
     developpement = df[df['date_mutation'] < debut_test]
     test = df[df['date_mutation'] >= debut_test]
     if developpement.empty:
         raise ValueError('Pas de donnees anterieures au test.')
+
     debut_valid = (pd.Timestamp(date_validation) if date_validation else
                    developpement['date_mutation'].iloc[int(len(developpement) * .8)])
     train = developpement[developpement['date_mutation'] < debut_valid]
     valid = developpement[developpement['date_mutation'] >= debut_valid]
+
     if min(len(train), len(valid), len(test)) < 2:
         raise ValueError('Train/validation/test doivent contenir au moins deux mutations chacun. '
                          'Adapter les dates ou collecter davantage de donnees.')
@@ -54,14 +82,17 @@ def decouper_chronologiquement(df, date_test=None, date_validation=None):
 def metriques(df, prediction, cible='prix_m2'):
     """Calculer les métriques d'erreur des prédictions immobilières."""
     surface = numerique(df['surface_reelle_bati']).to_numpy()
+
     if cible == 'prix_m2':
         reel_m2 = numerique(df['prix_m2']).to_numpy()
         pred_m2 = prediction
     else:
         reel_m2 = numerique(df['valeur_fonciere']).to_numpy() / surface
         pred_m2 = prediction / surface
+
     reel_total, pred_total = reel_m2 * surface, pred_m2 * surface
     erreurs = np.abs(pred_m2 - reel_m2) / reel_m2
+
     return {'n': len(df),
         'mae_eur_m2': float(mean_absolute_error(reel_m2, pred_m2)),
         'rmse_eur_m2': float(np.sqrt(mean_squared_error(reel_m2, pred_m2))),
@@ -86,15 +117,18 @@ def importance_ponderee(modele, X_validation, y_validation, log_cible,
     """
     if not 0 <= poids_modele <= 1:
         raise ValueError('Le poids d importance du modele doit etre entre 0 et 1.')
+
     if repetitions < 1 or seuil_pct < 0:
         raise ValueError('Les repetitions et le seuil d importance doivent etre positifs.')
 
     def score_mae(estimator, X, y):
         """Retourner la MAE négative attendue par scikit-learn."""
         prediction = np.asarray(estimator.predict(X), dtype=float)
+
         if log_cible:
             prediction = np.exp(prediction)
             y = np.exp(np.asarray(y, dtype=float))
+
         return -mean_absolute_error(y, prediction)
 
     importance_modele = np.asarray(modele.get_feature_importance(type='PredictionValuesChange'), dtype=float)
@@ -111,6 +145,7 @@ def importance_ponderee(modele, X_validation, y_validation, log_cible,
     score_modele = normaliser(importance_modele)
     score_permutation = normaliser(importance_permutation)
     score_pondere = poids_modele * score_modele + (1 - poids_modele) * score_permutation
+
     resultat = pd.DataFrame({
         'variable': X_validation.columns,
         'importance_catboost_pct': score_modele,
@@ -125,11 +160,13 @@ def modele_ridge(colonnes=BASE_FEATURES_DVF):
     """Construire le pipeline de régression Ridge de référence."""
     numeriques = [c for c in colonnes if c not in CATEGORIELLES]
     categories = [c for c in CATEGORIELLES if c in colonnes]
+
     preprocess = ColumnTransformer([
         ('numeriques', Pipeline([
             ('imputation', SimpleImputer(strategy='median', add_indicator=True, keep_empty_features=True)),
             ('standardisation', StandardScaler())]), numeriques),
         ('categories', OneHotEncoder(handle_unknown='ignore'), categories)])
+
     return Pipeline([('pretraitement', preprocess), ('regression', Ridge(alpha=10, solver='lsqr'))])
 
 
@@ -137,6 +174,7 @@ def echantillonner_train(df, maximum):
     """Limiter la taille de l'apprentissage de façon reproductible."""
     if maximum and len(df) > maximum:
         return df.sample(n=maximum, random_state=RANDOM_STATE).sort_values('date_mutation')
+
     return df
 
 
@@ -151,11 +189,14 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
     reports = Path(dossier_reports or ROOT / 'reports')
     models.mkdir(parents=True, exist_ok=True)
     reports.mkdir(parents=True, exist_ok=True)
+    version_modele = informations_version_modele()
+
     df = df.copy()
     requis = {'id_mutation', 'date_mutation', 'surface_reelle_bati', 'prix_m2', 'valeur_fonciere',
               'code_insee', 'code_departement', 'type_local'}
     if manque := sorted(requis - set(df)):
         raise ValueError(f'Colonnes absentes : {manque}. Relancer preparer_donnees.py --force.')
+
     df['date_mutation'] = dates(df['date_mutation'])
     for c in ['surface_reelle_bati', 'prix_m2', 'valeur_fonciere']:
         df[c] = numerique(df[c])
@@ -163,9 +204,11 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
         raise ValueError('Surface/cible invalide. Corriger le nettoyage, sans filtrer differemment par modele.')
     if not np.allclose(df['prix_m2'], df['valeur_fonciere'] / df['surface_reelle_bati']):
         raise ValueError('prix_m2 et valeur_fonciere/surface sont incoherents.')
+
     train_complet, valid, test = decouper_chronologiquement(df, date_test, date_validation)
     train = echantillonner_train(train_complet, max_train)
     print(f'Train : {len(train):,} ; validation : {len(valid):,} ; test reserve : {len(test):,}')
+
     avec_dpe = ('dpe_profil_disponible' in train and
                 pd.to_numeric(train['dpe_profil_disponible'], errors='coerce').gt(0).any())
     if avec_dpe and (chemin_profils is None or not Path(chemin_profils).exists()):
@@ -174,6 +217,7 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
         destination = models / 'profils_dpe.joblib'
         if Path(chemin_profils).resolve() != destination.resolve():
             shutil.copy2(chemin_profils, destination)
+
     avec_marche = set(MARCHE_FEATURES).issubset(train.columns)
     if avec_marche:
         if chemin_profils_marche is None or not Path(chemin_profils_marche).exists():
@@ -181,6 +225,7 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
         destination_marche = models / 'profils_marche.joblib'
         if Path(chemin_profils_marche).resolve() != destination_marche.resolve():
             shutil.copy2(chemin_profils_marche, destination_marche)
+
     parametres = dict(iterations=iterations, depth=7, learning_rate=.05, loss_function='RMSE',
                       random_seed=RANDOM_STATE, thread_count=4, allow_writing_files=False)
     candidats = [
@@ -190,12 +235,14 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
     if train['type_local'].value_counts().ge(100).sum() >= 2:
         candidats.append(('CatBoost_DVF_Segmente', CatBoostParType(parametres),
                           BASE_FEATURES_DVF, log_cible))
+
     candidats.append(('CatBoost_DVF_Enrichi', CatBoostRegressor(**parametres),
                       FEATURES_ENRICHIES, log_cible))
     if log_cible:
         parametres_direct = {**parametres, 'depth': 8, 'iterations': max(iterations, 1400)}
         candidats.append(('CatBoost_DVF_Enrichi_Direct', CatBoostRegressor(**parametres_direct),
                           FEATURES_ENRICHIES, False))
+
     if avec_marche:
         candidats.append(('CatBoost_DVF_Marche', CatBoostRegressor(**parametres),
                           BASE_FEATURES, log_cible))
@@ -207,26 +254,32 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
                           BASE_FEATURES_DVF + DPE_FEATURES, log_cible))
     else:
         print('Pas de profil DPE suffisamment renseigne dans le train : comparaison DVF seule.')
+
     versions = {nom: version(nom) for nom in ['numpy', 'pandas', 'scikit-learn', 'catboost', 'joblib']}
     versions['python'] = platform.python_version()
     scores, bundles = [], {}
+
     for nom, modele, colonnes, candidat_log in candidats:
         print(f'\nEntrainement : {nom}')
         X_train, X_valid = construire_X(train, colonnes), construire_X(valid, colonnes)
         y_train = np.log(train[cible].to_numpy()) if candidat_log else train[cible].to_numpy()
         y_valid = np.log(valid[cible].to_numpy()) if candidat_log else valid[cible].to_numpy()
+
         if isinstance(modele, CatBoostRegressor):
             modele.fit(X_train, y_train, cat_features=[c for c in CATEGORIELLES if c in X_train],
                        eval_set=(X_valid, y_valid), early_stopping_rounds=80,
                        use_best_model=True, verbose=False)
         else:
             modele.fit(X_train, y_train)
-        bundle = {'format_version': 2, 'versions': versions, 'nom': nom, 'modele': modele, 'colonnes': colonnes,
+
+        bundle = {'format_version': 2, 'versions': versions, 'version_modele': version_modele,
+                  'nom': nom, 'modele': modele, 'colonnes': colonnes,
                   'categoriels': CATEGORIELLES, 'cible': cible, 'log_cible': candidat_log,
                   'profils_dpe': 'profils_dpe.joblib' if nom.endswith('_DPE') else None,
                   'profils_marche': ('profils_marche.joblib'
                                      if any(c in colonnes for c in MARCHE_FEATURES) else None),
                   'fin_apprentissage': str(train['date_mutation'].max().date())}
+
         train_scores = metriques(train, predire_bundle(bundle, train), cible)
         valid_scores = metriques(valid, predire_bundle(bundle, valid), cible)
         scores.append({'modele': nom, **valid_scores, 'mae_train_eur_m2': train_scores['mae_eur_m2']})
@@ -235,8 +288,10 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
         print(f"MAE train = {train_scores['mae_eur_m2']:.1f} EUR/m2 ; "
               f"MAE validation = {valid_scores['mae_eur_m2']:.1f} EUR/m2 ; "
               f"R2 validation = {valid_scores['r2_prix_m2']:.3f}")
+
     tableau = pd.DataFrame(scores).sort_values('mae_eur_m2')
     tableau.to_csv(reports / 'comparaison_validation.csv', index=False)
+
     # Le choix est termine AVANT tout appel predict() sur le test.
     meilleur_nom = tableau.iloc[0]['modele']
     meilleur_catboost = tableau[tableau['modele'].str.startswith('CatBoost')].iloc[0]['modele']
@@ -251,11 +306,13 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
     importance.insert(0, 'modele_analyse', meilleur_catboost)
     importance['modele_selectionne'] = meilleur_nom
     importance.to_csv(reports / 'importance_variables.csv', index=False)
+
     meilleur = bundles[meilleur_nom].copy()
     selectionne = meilleur['modele']
     meilleur['modele'] = clone(selectionne)
     if isinstance(selectionne, CatBoostRegressor):
         meilleur['modele'].set_params(iterations=selectionne.tree_count_)
+
     developpement = echantillonner_train(pd.concat([train_complet, valid]), max_train)
     X_dev = construire_X(developpement, meilleur['colonnes'])
     y_dev = (np.log(developpement[cible].to_numpy()) if meilleur['log_cible']
@@ -265,8 +322,10 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
                                cat_features=[c for c in CATEGORIELLES if c in X_dev], verbose=False)
     else:
         meilleur['modele'].fit(X_dev, y_dev)
+
     meilleur['fin_apprentissage'] = str(developpement['date_mutation'].max().date())
     meilleur['debut_test'] = str(test['date_mutation'].min().date())
+
     prediction = predire_bundle(meilleur, test)
     score_test = metriques(test, prediction, cible)
     autorise_m2 = r2_minimum is None or score_test['r2_prix_m2'] >= r2_minimum
@@ -278,6 +337,7 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
     meilleur['seuil_r2_prix_total'] = r2_total_minimum
     meilleur['metriques_test'] = score_test
     joblib.dump(meilleur, models / 'meilleur_modele.joblib')
+
     diagnostic = test[['id_mutation', 'date_mutation', 'code_insee', 'type_local',
                        'surface_reelle_bati', 'prix_m2', 'valeur_fonciere']].copy()
     diagnostic['prix_m2_predit'] = prediction if cible == 'prix_m2' else prediction / diagnostic['surface_reelle_bati']
@@ -285,13 +345,16 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
     diagnostic['erreur_absolue_eur_m2'] = (diagnostic['prix_m2_predit'] - diagnostic['prix_m2']).abs()
     diagnostic['erreur_relative'] = diagnostic['erreur_absolue_eur_m2'] / diagnostic['prix_m2']
     diagnostic.to_csv(reports / 'predictions_test.csv', index=False)
+
     for cles, fichier in [(['type_local'], 'erreurs_par_type.csv'),
                           (['code_insee', 'type_local'], 'erreurs_par_commune.csv')]:
         (diagnostic.groupby(cles).agg(n=('id_mutation', 'size'),
             mae_eur_m2=('erreur_absolue_eur_m2', 'mean'),
             erreur_relative_mediane=('erreur_relative', 'median'))
             .to_csv(reports / fichier))
-    rapport = {'modele_selectionne_sur_validation': meilleur_nom, 'versions': versions, 'cible': cible,
+
+    rapport = {'modele_selectionne_sur_validation': meilleur_nom, 'versions': versions,
+        'version_modele': version_modele, 'cible': cible,
         'log_cible_demandee': log_cible, 'log_cible_selectionnee': meilleur['log_cible'],
         'validation': scores, 'test_final': score_test,
         'decision_deploiement': {'autorise': bool(autorise_deploiement),
@@ -312,6 +375,9 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
         'objectif_selection': 'MAE en EUR/m2 sur validation, jamais sur test',
         'limite': 'Evaluation sur mutations simples du perimetre collecte, pas sur toutes les ventes.'}
     (reports / 'metriques.json').write_text(json.dumps(rapport, indent=2, allow_nan=False), encoding='utf-8')
+    (reports / 'version_modele.json').write_text(
+        json.dumps(version_modele, indent=2, allow_nan=False), encoding='utf-8')
+
     print(f'\nModele retenu : {meilleur_nom}')
     print(f"TEST FINAL : MAE = {score_test['mae_eur_m2']:.1f} EUR/m2 ; "
           f"MAE prix total = {score_test['mae_prix_total']:.0f} EUR ; "
@@ -326,6 +392,7 @@ def entrainer_et_evaluer(df, dossier_models=None, dossier_reports=None, iteratio
             seuils_refuses.append(
                 f'R2 prix total {score_test["r2_prix_total"]:.3f} <= {r2_total_minimum:.3f}')
         print(f'DEPLOIEMENT BLOQUE : {" ; ".join(seuils_refuses)}.')
+
     return rapport
 
 
@@ -352,6 +419,7 @@ def main():
     parser.add_argument('--seuil-importance', type=float, default=1.0,
                         help='Score pondere minimal, en pourcentage, pour retenir une variable.')
     args = parser.parse_args()
+
     df = pd.read_csv(args.donnees, dtype={c: 'string' for c in CATEGORIELLES + ['id_mutation']}, low_memory=False)
     rapport = entrainer_et_evaluer(df, cible=args.cible, iterations=args.iterations,
         log_cible=not args.sans_log, max_train=args.max_train,
@@ -363,6 +431,7 @@ def main():
         repetitions_importance=args.repetitions_importance,
         seuil_importance_pct=args.seuil_importance,
         chemin_profils_marche=args.donnees.parent / 'profils_marche.joblib')
+
     if args.exiger_qualite and not rapport['decision_deploiement']['autorise']:
         raise SystemExit('Le modele ne respecte pas les seuils de qualite demandes.')
 

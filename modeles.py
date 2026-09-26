@@ -1,8 +1,10 @@
 """Schema des variables et objets serialisables pour entrainement/prediction."""
+
 import numpy as np
 import pandas as pd
 from catboost import CatBoostRegressor
 from sklearn.base import BaseEstimator, RegressorMixin
+
 from utilitaires import dates, normaliser_code, numerique
 
 CATEGORIELLES_BASE = ['code_insee', 'code_postal', 'code_departement', 'type_local']
@@ -36,16 +38,19 @@ def construire_profils_marche(ventes):
     manquantes = sorted(requis - set(ventes))
     if manquantes:
         raise ValueError(f'Colonnes absentes pour les comparables : {manquantes}')
+
     df = ventes[MARCHE_CLES + ['date_mutation', 'prix_m2']].copy()
     df['date_mutation'] = dates(df['date_mutation'])
     df['code_postal'] = normaliser_code(df['code_postal'])
     df['type_local'] = df['type_local'].astype('string').str.strip().str.capitalize()
     df['prix_m2'] = numerique(df['prix_m2'])
     df = df.dropna(subset=MARCHE_CLES + ['date_mutation', 'prix_m2'])
+
     quotidien = (df.groupby(MARCHE_CLES + ['date_mutation'], observed=True, as_index=False)
                    .agg(marche_nb_jour=('prix_m2', 'size'),
                         marche_somme_prix_m2_jour=('prix_m2', 'sum'))
                    .sort_values(['date_mutation', *MARCHE_CLES]))
+
     colonnes = ['marche_nb_jour', 'marche_somme_prix_m2_jour']
     quotidien[['marche_nb_cumule', 'marche_somme_prix_m2_cumule']] = (
         quotidien.groupby(MARCHE_CLES, observed=True)[colonnes].cumsum())
@@ -56,18 +61,21 @@ def appliquer_profils_marche(ventes, profils, minimum_ventes=10):
     """Ajouter des comparables 365/730 jours strictement anterieurs a la vente."""
     if minimum_ventes < 1:
         raise ValueError('Le minimum de ventes doit etre positif.')
+
     resultat = ventes.drop(columns=[c for c in MARCHE_FEATURES if c in ventes]).copy().reset_index(drop=True)
     for colonne in MARCHE_FEATURES:
         resultat[colonne] = np.nan
     resultat['marche_profil_disponible'] = 0.0
     if profils is None or profils.empty or ventes.empty:
         return resultat
+
     base = resultat[MARCHE_CLES + ['date_mutation']].copy()
     base['_position'] = np.arange(len(base))
     base['date_mutation'] = dates(base['date_mutation'])
     base['code_postal'] = normaliser_code(base['code_postal'])
     base['type_local'] = base['type_local'].astype('string').str.strip().str.capitalize()
     base = base.dropna(subset=MARCHE_CLES + ['date_mutation'])
+
     profil = profils.copy()
     profil['date_mutation'] = dates(profil['date_mutation'])
     profil['code_postal'] = normaliser_code(profil['code_postal'])
@@ -96,6 +104,7 @@ def appliquer_profils_marche(ventes, profils, minimum_ventes=10):
     nb_730, moyenne_730 = fenetre(il_y_a_730)
     disponible = nb_365.ge(minimum_ventes)
     index = nb_365.index
+
     resultat.loc[index, 'marche_nb_365j'] = nb_365
     resultat.loc[index, 'marche_nb_730j'] = nb_730
     resultat.loc[index, 'marche_prix_m2_moyen_365j'] = moyenne_365.where(disponible)
@@ -113,8 +122,10 @@ def construire_X(df, colonnes):
     donnees['mois_mutation'] = date.dt.month
     donnees['trimestre_mutation'] = date.dt.quarter
     donnees['periode_mutation'] = date.dt.to_period('M').astype('string')
+
     for c in ['surface_reelle_bati', 'nombre_pieces_principales']:
         donnees[c] = numerique(donnees.get(c, pd.Series(np.nan, index=df.index)))
+
     latitude = numerique(donnees.get('latitude', pd.Series(np.nan, index=df.index)))
     longitude = numerique(donnees.get('longitude', pd.Series(np.nan, index=df.index)))
     donnees['latitude'], donnees['longitude'] = latitude, longitude
@@ -125,12 +136,14 @@ def construire_X(df, colonnes):
         donnees[nom] = lat_cellule + '_' + lon_cellule
     donnees['geo_adresse'] = (latitude.round(5).astype('string') + '_' +
                               longitude.round(5).astype('string'))
+
     code_insee = normaliser_code(donnees.get('code_insee', pd.Series(pd.NA, index=df.index)))
     voie = donnees.get('adresse_code_voie', pd.Series(pd.NA, index=df.index)).astype('string').str.strip().str.upper()
     donnees['voie_locale'] = code_insee + '_' + voie
     numero = donnees.get('adresse_numero', pd.Series(pd.NA, index=df.index)).astype('string').str.strip()
     suffixe = donnees.get('adresse_suffixe', pd.Series(pd.NA, index=df.index)).astype('string').str.strip().str.upper()
     donnees['adresse_locale'] = code_insee + '_' + voie + '_' + numero + '_' + suffixe.fillna('')
+
     parcelle = donnees.get('id_parcelle', pd.Series(pd.NA, index=df.index)).astype('string').str.strip().str.upper()
     donnees['parcelle_locale'] = parcelle
     lots = pd.concat([
@@ -139,6 +152,7 @@ def construire_X(df, colonnes):
     ], axis=1).fillna('')
     donnees['lot_cadastral'] = parcelle + '_' + lots.agg('_'.join, axis=1)
     donnees['section_cadastrale'] = parcelle.str.slice(stop=-4).where(parcelle.str.len().ge(8))
+
     surfaces_carrez = pd.concat([
         numerique(donnees.get(f'lot{i}_surface_carrez', pd.Series(np.nan, index=df.index)))
         for i in range(1, 6)
@@ -151,6 +165,7 @@ def construire_X(df, colonnes):
         donnees.get('adresse_numero', pd.Series(np.nan, index=df.index)))
     pieces = donnees['nombre_pieces_principales'].where(donnees['nombre_pieces_principales'].gt(0))
     donnees['surface_par_piece'] = donnees['surface_reelle_bati'] / pieces
+
     X = donnees.reindex(columns=colonnes).copy()
     for c in colonnes:
         if c in CATEGORIELLES:
@@ -166,6 +181,7 @@ def construire_X(df, colonnes):
 
 class MedianeLocale(RegressorMixin, BaseEstimator):
     """Reference : commune/type, puis departement/type, puis type, puis globale."""
+
     def __init__(self, minimum=10):
         """Initialiser le nombre minimal de références locales."""
         self.minimum = minimum
@@ -176,23 +192,28 @@ class MedianeLocale(RegressorMixin, BaseEstimator):
         df['_cible'] = np.asarray(y)
         self.globale_ = float(np.median(y))
         self.tables_ = []
+
         for cles in [['code_insee', 'type_local'], ['code_departement', 'type_local'], ['type_local']]:
             stats = df.groupby(cles, dropna=False)['_cible'].agg(['median', 'count'])
             self.tables_.append((cles, stats.loc[stats['count'].ge(self.minimum), 'median']))
+
         return self
 
     def predict(self, X):
         """Prédire avec la médiane locale la plus précise disponible."""
         prediction = np.full(len(X), np.nan)
+
         for cles, table in self.tables_:
             index = pd.MultiIndex.from_frame(X[cles]) if len(cles) > 1 else pd.Index(X[cles[0]])
             valeurs = table.reindex(index).to_numpy(dtype=float)
             prediction = np.where(np.isnan(prediction), valeurs, prediction)
+
         return np.where(np.isnan(prediction), self.globale_, prediction)
 
 
 class CatBoostParType(RegressorMixin, BaseEstimator):
     """Deux modeles CatBoost, un par type de logement, avec repli global."""
+
     def __init__(self, parametres):
         """Initialiser les paramètres des modèles CatBoost."""
         self.parametres = parametres
@@ -201,33 +222,41 @@ class CatBoostParType(RegressorMixin, BaseEstimator):
         """Entraîner un modèle global et un modèle par type de bien."""
         self.modele_global_ = CatBoostRegressor(**self.parametres)
         self.modele_global_.fit(X, y, cat_features=[c for c in CATEGORIELLES if c in X], verbose=False)
+
         self.modeles_type_ = {}
         self.effectifs_type_ = {}
+
         for type_local in X['type_local'].dropna().unique():
             masque = X['type_local'].eq(type_local)
             if masque.sum() < 100:
                 continue
+
             modele = CatBoostRegressor(**self.parametres)
             modele.fit(X.loc[masque], np.asarray(y)[masque.to_numpy()],
                        cat_features=[c for c in CATEGORIELLES if c in X], verbose=False)
             self.modeles_type_[type_local] = modele
             self.effectifs_type_[type_local] = int(masque.sum())
+
         return self
 
     def predict(self, X):
         """Prédire par type de bien avec repli sur le modèle global."""
         prediction = np.asarray(self.modele_global_.predict(X), dtype=float)
+
         for type_local, modele in self.modeles_type_.items():
             masque = X['type_local'].eq(type_local)
             if masque.any():
                 prediction[masque.to_numpy()] = modele.predict(X.loc[masque])
+
         return prediction
 
     def get_feature_importance(self, type='PredictionValuesChange'):
         """Agréger les importances selon les effectifs de chaque type."""
         total = sum(self.effectifs_type_.values())
+
         if not total:
             return self.modele_global_.get_feature_importance(type=type)
+
         importance = np.zeros(len(self.modele_global_.feature_names_), dtype=float)
         for type_local, modele in self.modeles_type_.items():
             importance += self.effectifs_type_[type_local] * modele.get_feature_importance(type=type)
@@ -238,8 +267,11 @@ def predire_bundle(bundle, df):
     """Produire des prédictions avec un modèle et son schéma sauvegardé."""
     X = construire_X(df, bundle['colonnes'])
     prediction = np.asarray(bundle['modele'].predict(X), dtype=float)
+
     if bundle['log_cible']:
         prediction = np.exp(prediction)
+
     if not np.isfinite(prediction).all():
         raise ValueError('Le modele a produit des predictions non finies.')
+
     return prediction

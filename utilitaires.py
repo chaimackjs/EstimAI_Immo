@@ -3,9 +3,11 @@
 Ce module ne réalise aucun apprentissage. Il prépare les noms de colonnes,
 les codes, les nombres et les dates pour les étapes DVF et DPE.
 """
+
 from pathlib import Path
 import re
 import unicodedata
+
 import numpy as np
 import pandas as pd
 

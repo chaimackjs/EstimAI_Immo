@@ -1,5 +1,7 @@
 """Interface Streamlit de démonstration du meilleur modèle immobilier."""
+
 from datetime import date
+import os
 from pathlib import Path
 
 import joblib
@@ -12,6 +14,10 @@ from modeles import predire_bundle
 
 ROOT = Path(__file__).resolve().parent
 MODEL_PATH = ROOT / "models" / "meilleur_modele.joblib"
+CONTACT_RGPD = os.getenv(
+    "CONTACT_RGPD",
+    "Responsable du dépôt EstimAI Immo : https://github.com/chaimackjs",
+)
 NATURES_TERRAIN = {
     "Non renseignée": "",
     "Sol": "S",
@@ -50,6 +56,7 @@ def construire_donnees(date_mutation, surface, surface_carrez, terrain, pieces,
     code_insee = code_insee.strip().upper()
     code_postal = code_postal.strip()
     departement = code_insee[:3] if code_insee.startswith(("97", "98")) else code_insee[:2]
+
     return pd.DataFrame([{
         "date_mutation": pd.Timestamp(date_mutation),
         "surface_reelle_bati": float(surface),
@@ -86,9 +93,15 @@ if bundle is None:
     )
     st.stop()
 
+version_modele = bundle.get("version_modele", {}).get("identifiant", "ancienne-version")
+st.caption(f"Version du modèle : {version_modele}")
+
 metriques = bundle.get("metriques_test", {})
 seuil_total = bundle.get("seuil_r2_prix_total", 0.70)
-modele_valide = metriques.get("r2_prix_total", float("-inf")) > seuil_total
+modele_valide = (
+    bundle.get("autorise_deploiement") is True
+    and metriques.get("r2_prix_total", float("-inf")) > seuil_total
+)
 if modele_valide:
     st.success(f"Modèle validé — R² prix total : {metriques['r2_prix_total']:.3f}.")
 else:
@@ -102,6 +115,33 @@ st.info(
     "exacte et l'identifiant de parcelle. Les ratios et mailles géographiques sont "
     "calculés automatiquement."
 )
+
+with st.expander("Confidentialité et RGPD", expanded=False):
+    st.markdown(
+        f"""
+        **Finalité.** Produire une estimation immobilière indicative et évaluer la
+        qualité du modèle. L'application ne prend aucune décision juridique ou
+        financière à votre place.
+
+        **Base légale envisagée.** Intérêt légitime du responsable à développer et
+        démontrer un outil d'estimation, conformément à l'article 6.1.f du RGPD. Cette
+        base doit être revalidée par le responsable avant tout usage commercial.
+
+        **Données saisies.** Caractéristiques et localisation du bien. L'application
+        ne les enregistre pas volontairement dans une base ou un fichier. Elles sont
+        traitées en mémoire pour calculer l'estimation. L'hébergeur peut conserver des
+        journaux techniques selon sa propre politique.
+
+        **Sources d'apprentissage.**
+        [DVF — DGFiP/data.gouv.fr](https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres)
+        et [DPE — ADEME](https://data.ademe.fr/datasets/dpe03existant).
+
+        **Contact et droits.** {CONTACT_RGPD}. Vous pouvez demander des informations
+        sur le traitement ou exercer vos droits auprès de ce responsable. La
+        [documentation RGPD complète](https://github.com/chaimackjs/EstimAI_Immo/blob/main/RGPD.md)
+        précise les durées, destinataires et mesures de sécurité.
+        """
+    )
 
 with st.form("formulaire_estimation"):
     st.subheader("1. Localisation du bien")

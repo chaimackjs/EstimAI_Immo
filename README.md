@@ -23,7 +23,8 @@ Exemple avec le département 69 : adapter les départements et les années au pr
 Il n'est pas nécessaire de commencer par toute la France.
 
 ```bash
-python acquisition_donnees.py --departements 69 --annee-debut 2021 --annee-fin 2025 --avec-dpe
+python acquisition_donnees.py --departements 69 \
+  --annee-debut 2021 --annee-fin 2025 --avec-dpe
 ```
 
 Le programme télécharge les **CSV DVF géolocalisés Etalab**, avec identifiant de
@@ -137,7 +138,7 @@ une moyenne conditionnelle non biaisée en euros.
 La sélection minimise la **MAE en euros/m² sur validation**, y compris avec la
 cible alternative `valeur_fonciere`. L'arrêt anticipé de CatBoost utilise la
 validation, jamais le test. Le meilleur candidat est réentraîné sur apprentissage
-+ validation, avec le nombre d'arbres retenu, puis le test est évalué.
+et validation, avec le nombre d'arbres retenu, puis le test est évalué.
 Le modèle final sauvegardé n'a pas appris sur le test. Si le R² du test est sous
 le seuil indiqué, il est marqué comme bloqué et `predire.py` refuse de l'utiliser.
 
@@ -172,8 +173,10 @@ Le profil est reconstruit lors d'une prédiction future.
 
 ### Fichiers utiles
 
+<!-- markdownlint-disable MD013 -->
+
 | Fichier | Utilisation |
-|---|---|
+| --- | --- |
 | `reports/qualite_donnees.json` | Volumes bruts, exclusions, DPE dédoublonnés, dates estimées. |
 | `reports/couverture_dpe.csv` | Couverture par année, département et type de bien. |
 | `reports/comparaison_validation.csv` | Comparaison des candidats et apport du DPE. |
@@ -184,6 +187,8 @@ Le profil est reconstruit lors d'une prédiction future.
 | `models/meilleur_modele.joblib` | Modèle retenu, schéma, prétraitement et métadonnées. |
 | `models/profils_dpe.joblib` | Profils historiques nécessaires aux candidats enrichis DPE. |
 | `models/profils_marche.joblib` | Comparables historiques nécessaires au candidat marché. |
+
+<!-- markdownlint-enable MD013 -->
 
 Les métriques incluent MAE, RMSE et R² sur le prix au m² et le prix total,
 erreur relative médiane, MAPE et proportions à moins de 10 % et 20 % d'erreur.
@@ -232,6 +237,13 @@ l'imputation et un entraînement complet avec rechargement/prédiction.
 des données artificielles. Aucun score obtenu sur ces données ne constitue une
 mesure de précision immobilière. Aucun modèle artificiellement entraîné n'est
 livré comme modèle exploitable.
+
+## 7. Protection des données
+
+La notice d'information, la fiche du registre de traitement et l'analyse
+préliminaire de nécessité d'une AIPD sont regroupées dans [`RGPD.md`](RGPD.md).
+Avant un déploiement public, configurer `CONTACT_RGPD` avec le nom du responsable
+et une adresse de contact dédiée, puis faire valider la base légale et l'AIPD.
 
 Les appels HTTP ont été testés avec des réponses simulées. Le réseau n'était
 pas accessible depuis le processus Python de l'environnement : le téléchargement

@@ -218,6 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 data/
+models/*
+!models/meilleur_modele.joblib
 reports/
 catboost_info/
 *.part

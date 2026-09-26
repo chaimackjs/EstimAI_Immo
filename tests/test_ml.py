@@ -3,13 +3,15 @@ import joblib
 import numpy as np
 import pandas as pd
 import pytest
-from ml import decouper_chronologiquement, entrainer_et_evaluer, modele_ridge
+from ml import (decouper_chronologiquement, entrainer_et_evaluer,
+                informations_version_modele, modele_ridge)
 from modeles import BASE_FEATURES, construire_X, predire_bundle
 from nettoyage_dvf import nettoyer_dvf
 from nettoyage_dpe import nettoyer_dpe
 from predire import predire_biens
 from rapprochement_dvf_dpe import DPE_FEATURES, construire_profils_dpe, appliquer_profils_dpe
 from test_donnees import vente, diagnostic
+from verifier_modele import verifier_modele
 
 
 def donnees_synthetiques(n=160):
@@ -36,6 +38,17 @@ def test_decoupage_chronologique_sans_chevauchement():
     assert valid.date_mutation.max() < test.date_mutation.min()
     assert set(train.id_mutation).isdisjoint(test.id_mutation)
     assert sum(map(len, [train, valid, test])) == len(df)
+
+
+def test_version_modele_contient_sha_et_empreinte(tmp_path, monkeypatch):
+    manifeste = tmp_path / 'manifest.json'
+    manifeste.write_text('{"source": "test"}', encoding='utf-8')
+    monkeypatch.setenv('GITHUB_SHA', '1234567890abcdef')
+    monkeypatch.setenv('GITHUB_RUN_ID', '42')
+    version = informations_version_modele(manifeste)
+    assert version['git_sha'] == '1234567890abcdef'
+    assert version['github_run_id'] == '42'
+    assert version['manifest_sha256']
 
 
 def test_meme_jour_non_partage_entre_ensembles():
@@ -102,6 +115,11 @@ def test_complet_selection_refit_rechargement_et_prediction(tmp_path):
     dpe_resultat = predire_biens(entree, models / 'CatBoost_DVF_DPE.joblib')
     assert dpe_resultat.profil_dpe_disponible.iloc[0]
     assert (reports / 'metriques.json').exists()
+    assert (reports / 'version_modele.json').exists()
+    assert joblib.load(models / 'meilleur_modele.joblib')['version_modele']['identifiant']
+    chemin_donnees = tmp_path / 'donnees.csv'
+    df.to_csv(chemin_donnees, index=False)
+    verifier_modele(models / 'meilleur_modele.joblib', chemin_donnees, nombre_lignes=5)
     importance = pd.read_csv(reports / 'importance_variables.csv')
     assert importance.score_pondere_pct.sum() == pytest.approx(100)
     assert {'variable', 'importance_catboost_pct', 'importance_permutation_pct', 'retenue'} <= set(importance)
